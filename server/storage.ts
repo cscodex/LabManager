@@ -1,5 +1,5 @@
-import { drizzle } from "drizzle-orm/neon-serverless";
-import { Pool } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
 import { eq, and } from "drizzle-orm";
 import * as bcrypt from "bcrypt";
 import * as schema from "@shared/schema";
@@ -11,7 +11,11 @@ import type {
   Grade, InsertGrade
 } from "@shared/schema";
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+// Use Node Postgres driver for reliable database connection in Replit
+const pool = new Pool({ 
+  connectionString: process.env.DATABASE_URL!,
+  ssl: { rejectUnauthorized: false }
+});
 const db = drizzle(pool, { schema });
 
 export interface IStorage {

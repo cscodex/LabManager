@@ -517,6 +517,107 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin/Development endpoints
+  app.post('/api/admin/seed', async (req, res) => {
+    try {
+      // Create sample labs
+      const labA = await storage.createLab({
+        name: "Lab A - Chemistry", 
+        description: "Advanced Chemistry Laboratory",
+        location: "Building A, Room 101",
+        capacity: 20
+      });
+      
+      const labB = await storage.createLab({
+        name: "Lab B - Biology", 
+        description: "Biology Research Laboratory",
+        location: "Building B, Room 201", 
+        capacity: 24
+      });
+
+      // Create sample instructors
+      const drSmith = await storage.createUserWithRole({
+        email: "dr.smith@university.edu",
+        password: "instructor123",
+        firstName: "Dr. Sarah",
+        lastName: "Smith",
+        role: "instructor"
+      });
+
+      const profJohnson = await storage.createUserWithRole({
+        email: "prof.johnson@university.edu", 
+        password: "instructor123",
+        firstName: "Prof. Michael",
+        lastName: "Johnson",
+        role: "instructor"
+      });
+
+      // Create sample classes
+      const chemClass = await storage.createClass({
+        name: "Advanced Chemistry",
+        code: "CHEM401",
+        section: "A1", 
+        labId: labA.id,
+        instructorId: drSmith.id,
+        semester: "Fall",
+        year: 2024
+      });
+
+      const bioClass = await storage.createClass({
+        name: "Molecular Biology",
+        code: "BIO301", 
+        section: "B1",
+        labId: labB.id,
+        instructorId: profJohnson.id,
+        semester: "Fall", 
+        year: 2024
+      });
+
+      // Create sample computers
+      for (let i = 1; i <= 5; i++) {
+        await storage.createComputer({
+          name: `CHEM-PC-${i.toString().padStart(2, '0')}`,
+          labId: labA.id,
+          specs: "Intel i7, 16GB RAM, Windows 11"
+        });
+      }
+
+      for (let i = 1; i <= 6; i++) {
+        await storage.createComputer({
+          name: `BIO-PC-${i.toString().padStart(2, '0')}`, 
+          labId: labB.id,
+          specs: "Intel i5, 8GB RAM, Windows 11"
+        });
+      }
+
+      // Create sample students
+      const students = [];
+      for (let i = 1; i <= 8; i++) {
+        const student = await storage.createUser({
+          email: `student${i}@university.edu`,
+          password: "student123", 
+          firstName: `Student${i}`,
+          lastName: "Test"
+        });
+        students.push(student);
+      }
+
+      res.status(201).json({ 
+        message: 'Sample data created successfully',
+        created: {
+          labs: 2,
+          instructors: 2, 
+          classes: 2,
+          computers: 11,
+          students: 8
+        }
+      });
+    } catch (error: any) {
+      console.error('Error seeding database:', error);
+      res.status(500).json({ error: 'Failed to seed database', details: error.message });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
