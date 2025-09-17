@@ -15,6 +15,7 @@ import { Link } from "wouter";
 const menuItems = [
   { title: "Dashboard", url: "/", icon: Home },
   { title: "Students", url: "/students", icon: Users },
+  { title: "Groups", url: "/groups", icon: Users },
   { title: "Lab Sessions", url: "/sessions", icon: Calendar },
   { title: "Submissions", url: "/submissions", icon: FileText },
   { title: "Grading", url: "/grading", icon: GraduationCap },

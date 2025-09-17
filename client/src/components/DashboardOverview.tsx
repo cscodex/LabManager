@@ -5,18 +5,38 @@ import { Users, Calendar, FileText, TrendingUp, Clock, CheckCircle } from "lucid
 
 //todo: remove mock functionality
 const mockStats = [
-  { title: "Total Students", value: "124", icon: Users, change: "+8 this week", changeType: "positive" },
-  { title: "Active Lab Sessions", value: "12", icon: Calendar, change: "3 today", changeType: "neutral" },
+  { title: "Total Students", value: "84", icon: Users, change: "Lab A: 42, Lab B: 42", changeType: "neutral" },
+  { title: "Active Sessions", value: "4", icon: Calendar, change: "2 per lab today", changeType: "neutral" },
   { title: "Pending Submissions", value: "18", icon: FileText, change: "-5 since yesterday", changeType: "positive" },
-  { title: "Average Grade", value: "87.2%", icon: TrendingUp, change: "+2.1% this semester", changeType: "positive" },
+  { title: "Computer Assignments", value: "16", icon: TrendingUp, change: "8 per lab", changeType: "neutral" },
 ];
 
 //todo: remove mock functionality
 const recentActivity = [
-  { student: "Emma Johnson", action: "submitted", item: "Lab 3: Chemical Analysis", time: "2 hours ago", status: "pending" },
-  { student: "Michael Chen", action: "graded", item: "Lab 2: Microscopy", time: "4 hours ago", status: "completed" },
-  { student: "Sarah Williams", action: "submitted", item: "Lab 4: Titration", time: "6 hours ago", status: "pending" },
-  { student: "David Rodriguez", action: "submitted", item: "Lab 3: Chemical Analysis", time: "1 day ago", status: "graded" },
+  { student: "Emma Johnson", action: "submitted", item: "Lab A - Session 3: Chemical Analysis", time: "2 hours ago", status: "pending", lab: "Lab A", group: "Group 1" },
+  { student: "Michael Chen", action: "graded", item: "Lab B - Session 2: Microscopy", time: "4 hours ago", status: "completed", lab: "Lab B", group: "Group 3" },
+  { student: "Sarah Williams", action: "submitted", item: "Lab A - Session 4: Titration", time: "6 hours ago", status: "pending", lab: "Lab A", group: "Group 2" },
+  { student: "David Rodriguez", action: "submitted", item: "Lab B - Session 3: Organic Synthesis", time: "1 day ago", status: "graded", lab: "Lab B", group: "Group 4" },
+];
+
+//todo: remove mock functionality  
+const labOverview = [
+  { 
+    name: "Lab A - Chemistry", 
+    instructor: "Dr. Smith", 
+    activeStudents: 42, 
+    computers: 8, 
+    groups: 6, 
+    nextSession: "Today 2:00 PM"
+  },
+  { 
+    name: "Lab B - Biology", 
+    instructor: "Prof. Johnson", 
+    activeStudents: 42, 
+    computers: 8, 
+    groups: 6, 
+    nextSession: "Tomorrow 10:00 AM"
+  }
 ];
 
 export function DashboardOverview() {
@@ -47,6 +67,43 @@ export function DashboardOverview() {
         ))}
       </div>
 
+      {/* Lab Overview */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {labOverview.map((lab, labIndex) => (
+          <Card key={labIndex} data-testid={`card-lab-${labIndex}`}>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg font-semibold" data-testid={`text-lab-name-${labIndex}`}>
+                  {lab.name}
+                </CardTitle>
+                <Badge variant="outline">{lab.instructor}</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-primary" />
+                  <span>{lab.activeStudents} Students</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{lab.groups} Groups</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span>💻 {lab.computers} Computers</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-secondary" />
+                  <span className="text-xs">{lab.nextSession}</span>
+                </div>
+              </div>
+              <Button variant="outline" className="w-full" data-testid={`button-manage-lab-${labIndex}`}>
+                Manage {lab.name}
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
       {/* Recent Activity */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -70,6 +127,12 @@ export function DashboardOverview() {
                       {activity.student}
                     </span>
                     <span className="text-muted-foreground">{activity.action}</span>
+                    <Badge variant="outline" className="text-xs">
+                      {activity.lab}
+                    </Badge>
+                    <Badge variant="secondary" className="text-xs">
+                      {activity.group}
+                    </Badge>
                     <Badge 
                       variant={activity.status === 'pending' ? 'destructive' : 'secondary'} 
                       className="text-xs"

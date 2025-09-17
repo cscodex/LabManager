@@ -8,6 +8,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import Dashboard from "@/pages/Dashboard";
 import Students from "@/pages/Students";
+import Groups from "@/pages/Groups";
 import Sessions from "@/pages/Sessions";
 import Submissions from "@/pages/Submissions";
 import Grading from "@/pages/Grading";
@@ -20,6 +21,7 @@ function Router() {
     <Switch>
       <Route path="/" component={Dashboard} />
       <Route path="/students" component={Students} />
+      <Route path="/groups" component={Groups} />
       <Route path="/sessions" component={Sessions} />
       <Route path="/submissions" component={Submissions} />
       <Route path="/grading" component={Grading} />

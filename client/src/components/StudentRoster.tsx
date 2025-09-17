@@ -13,8 +13,13 @@ const mockStudents = [
     name: "Emma Johnson", 
     email: "emma.j@university.edu", 
     studentId: "2023001", 
-    status: "active", 
-    enrollmentDate: "2024-01-15",
+    status: "active",
+    lab: "Lab A - Chemistry",
+    instructor: "Dr. Smith", 
+    class: "CHEM 101 - Section A",
+    group: "Group 1",
+    seat: "A-12",
+    computer: "PC-03",
     completedLabs: 8,
     totalLabs: 12
   },
@@ -23,8 +28,13 @@ const mockStudents = [
     name: "Michael Chen", 
     email: "michael.c@university.edu", 
     studentId: "2023002", 
-    status: "active", 
-    enrollmentDate: "2024-01-15",
+    status: "active",
+    lab: "Lab B - Biology",
+    instructor: "Prof. Johnson", 
+    class: "BIO 201 - Section B",
+    group: "Group 3",
+    seat: "B-08",
+    computer: "PC-11",
     completedLabs: 10,
     totalLabs: 12
   },
@@ -33,8 +43,13 @@ const mockStudents = [
     name: "Sarah Williams", 
     email: "sarah.w@university.edu", 
     studentId: "2023003", 
-    status: "inactive", 
-    enrollmentDate: "2024-01-15",
+    status: "inactive",
+    lab: "Lab A - Chemistry",
+    instructor: "Dr. Smith", 
+    class: "CHEM 101 - Section A",
+    group: "Group 2",
+    seat: "A-05",
+    computer: "PC-07",
     completedLabs: 6,
     totalLabs: 12
   },
@@ -43,8 +58,13 @@ const mockStudents = [
     name: "David Rodriguez", 
     email: "david.r@university.edu", 
     studentId: "2023004", 
-    status: "active", 
-    enrollmentDate: "2024-01-20",
+    status: "active",
+    lab: "Lab B - Biology",
+    instructor: "Prof. Johnson", 
+    class: "BIO 201 - Section B", 
+    group: "Group 4",
+    seat: "B-15",
+    computer: "PC-14",
     completedLabs: 9,
     totalLabs: 12
   },
@@ -57,7 +77,10 @@ export function StudentRoster() {
   const filteredStudents = mockStudents.filter(student =>
     student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     student.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    student.studentId.includes(searchTerm)
+    student.studentId.includes(searchTerm) ||
+    student.lab.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    student.class.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    student.group.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleStudentSelect = (studentId: string) => {
@@ -90,7 +113,7 @@ export function StudentRoster() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search students by name, email, or ID..."
+                placeholder="Search by name, email, ID, lab, class, or group..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -143,7 +166,7 @@ export function StudentRoster() {
                       {student.name.split(' ').map(n => n[0]).join('').toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
-                  <div>
+                  <div className="flex-1">
                     <div className="font-medium text-foreground" data-testid={`text-student-name-${student.id}`}>
                       {student.name}
                     </div>
@@ -151,9 +174,20 @@ export function StudentRoster() {
                       <Mail className="h-3 w-3" />
                       {student.email}
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      ID: {student.studentId}
+                    <div className="text-xs text-muted-foreground flex items-center gap-4 mt-1">
+                      <span>ID: {student.studentId}</span>
+                      <span>•</span>
+                      <span className="font-medium">{student.class}</span>
                     </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge variant="outline" className="text-xs">{student.lab}</Badge>
+                      <Badge variant="secondary" className="text-xs">{student.group}</Badge>
+                    </div>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    <div className="font-medium">Seat: {student.seat}</div>
+                    <div>Computer: {student.computer}</div>
+                    <div className="text-xs">Instructor: {student.instructor}</div>
                   </div>
                 </div>
                 
