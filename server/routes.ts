@@ -9,7 +9,10 @@ import {
   insertComputerSchema,
   insertGroupSchema,
   insertEnrollmentSchema,
-  insertSessionSchema
+  insertSessionSchema,
+  insertAssignmentSchema,
+  insertSubmissionSchema,
+  insertGradeSchema
 } from "@shared/schema";
 
 // SECURITY FIX: Basic authentication middleware (placeholder until Replit Auth is implemented)
@@ -74,6 +77,51 @@ const requireRole = (allowedRoles: string[]) => {
     
     next();
   };
+};
+
+// SECURITY FIX: Authorization helpers
+const validateSubmissionOwnership = async (submissionId: string, userId: string, userRole: string): Promise<boolean> => {
+  const submission = await storage.getSubmission(submissionId);
+  if (!submission) return false;
+  
+  if (userRole === 'student') {
+    return submission.studentId === userId;
+  } else if (userRole === 'instructor') {
+    // Instructor can access if they teach the class this assignment belongs to
+    const assignment = await storage.getAssignment(submission.assignmentId);
+    if (!assignment) return false;
+    
+    const session = await storage.getSession(assignment.sessionId);
+    if (!session) return false;
+    
+    const classData = await storage.getClass(session.classId);
+    return classData?.instructorId === userId;
+  }
+  return false;
+};
+
+const validateGradeAccess = async (submissionId: string, userId: string, userRole: string): Promise<boolean> => {
+  // Use same logic as submission ownership for grade access
+  return await validateSubmissionOwnership(submissionId, userId, userRole);
+};
+
+const validateInstructorOwnsSession = async (sessionId: string, instructorId: string): Promise<boolean> => {
+  const session = await storage.getSession(sessionId);
+  if (!session) return false;
+  
+  const classData = await storage.getClass(session.classId);
+  return classData?.instructorId === instructorId;
+};
+
+const validateStudentEnrollment = async (studentId: string, assignmentId: string): Promise<boolean> => {
+  const assignment = await storage.getAssignment(assignmentId);
+  if (!assignment) return false;
+  
+  const session = await storage.getSession(assignment.sessionId);
+  if (!session) return false;
+  
+  const enrollments = await storage.getEnrollmentsByClass(session.classId);
+  return enrollments.some(enrollment => enrollment.studentId === studentId && enrollment.isActive);
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -1006,6 +1054,276 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('Error checking scheduling conflicts:', error);
       res.status(500).json({ error: 'Failed to check scheduling conflicts' });
+    }
+  });
+
+  // Assignment Management
+  app.get('/api/sessions/:sessionId/assignments', requireAuth, async (req, res) => {
+    try {
+      const assignments = await storage.getAssignmentsBySession(req.params.sessionId);
+      res.json(assignments);
+    } catch (error: any) {
+      console.error('Error fetching assignments:', error);
+      res.status(500).json({ error: 'Failed to fetch assignments' });
+    }
+  });
+
+  app.get('/api/assignments/:id', requireAuth, async (req, res) => {
+    try {
+      const assignment = await storage.getAssignment(req.params.id);
+      if (!assignment) {
+        return res.status(404).json({ error: 'Assignment not found' });
+      }
+      res.json(assignment);
+    } catch (error: any) {
+      console.error('Error fetching assignment:', error);
+      res.status(500).json({ error: 'Failed to fetch assignment' });
+    }
+  });
+
+  app.post('/api/assignments', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const validatedData = insertAssignmentSchema.parse(req.body);
+      
+      // SECURITY FIX: Validate instructor owns the session's class
+      const hasAccess = await validateInstructorOwnsSession(validatedData.sessionId, user.id);
+      if (!hasAccess) {
+        return res.status(403).json({ 
+          error: 'Access denied',
+          message: 'You can only create assignments for sessions in your own classes'
+        });
+      }
+      
+      // SECURITY FIX: Validate session exists
+      const session = await storage.getSession(validatedData.sessionId);
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+      
+      const assignment = await storage.createAssignment(validatedData);
+      res.status(201).json(assignment);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: 'Invalid assignment data', details: error.errors });
+      }
+      console.error('Error creating assignment:', error);
+      res.status(500).json({ error: 'Failed to create assignment' });
+    }
+  });
+
+  // Submission Management
+  app.get('/api/assignments/:assignmentId/submissions', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      const user = (req as any).user;
+      
+      // SECURITY FIX: Validate instructor owns the assignment's session
+      const assignment = await storage.getAssignment(req.params.assignmentId);
+      if (!assignment) {
+        return res.status(404).json({ error: 'Assignment not found' });
+      }
+      
+      const hasAccess = await validateInstructorOwnsSession(assignment.sessionId, user.id);
+      if (!hasAccess) {
+        return res.status(403).json({ 
+          error: 'Access denied',
+          message: 'You can only view submissions for your own assignments'
+        });
+      }
+      
+      const submissions = await storage.getSubmissionsByAssignment(req.params.assignmentId);
+      res.json(submissions);
+    } catch (error: any) {
+      console.error('Error fetching submissions:', error);
+      res.status(500).json({ error: 'Failed to fetch submissions' });
+    }
+  });
+
+  app.get('/api/students/:studentId/submissions', requireAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const requestedStudentId = req.params.studentId;
+      
+      // SECURITY FIX: Students can only view their own submissions
+      if (user.role === 'student') {
+        if (user.id !== requestedStudentId) {
+          return res.status(403).json({ 
+            error: 'Access denied',
+            message: 'Students can only view their own submissions'
+          });
+        }
+      } else if (user.role === 'instructor') {
+        // SECURITY FIX: Instructors can only view submissions from students in their classes
+        const studentEnrollments = await storage.getEnrollmentsByStudent(requestedStudentId);
+        const instructorClasses = await storage.getClassesByInstructor(user.id);
+        
+        const hasAccess = studentEnrollments.some(enrollment => 
+          instructorClasses.some(classData => classData.id === enrollment.classId && enrollment.isActive)
+        );
+        
+        if (!hasAccess) {
+          return res.status(403).json({ 
+            error: 'Access denied',
+            message: 'You can only view submissions from students in your classes'
+          });
+        }
+      }
+      
+      const submissions = await storage.getSubmissionsByStudent(requestedStudentId);
+      res.json(submissions);
+    } catch (error: any) {
+      console.error('Error fetching student submissions:', error);
+      res.status(500).json({ error: 'Failed to fetch student submissions' });
+    }
+  });
+
+  app.get('/api/submissions/:id', requireAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      
+      // SECURITY FIX: Validate ownership before returning submission
+      const hasAccess = await validateSubmissionOwnership(req.params.id, user.id, user.role);
+      if (!hasAccess) {
+        return res.status(403).json({ 
+          error: 'Access denied',
+          message: 'You can only view your own submissions or submissions from your students'
+        });
+      }
+      
+      const submission = await storage.getSubmission(req.params.id);
+      if (!submission) {
+        return res.status(404).json({ error: 'Submission not found' });
+      }
+      res.json(submission);
+    } catch (error: any) {
+      console.error('Error fetching submission:', error);
+      res.status(500).json({ error: 'Failed to fetch submission' });
+    }
+  });
+
+  app.post('/api/submissions', requireAuth, requireRole(['student']), async (req, res) => {
+    try {
+      const user = (req as any).user;
+      
+      // SECURITY FIX: Parse and validate the request, but derive studentId from authenticated user
+      const { studentId: _, ...submissionData } = insertSubmissionSchema.parse(req.body);
+      
+      // SECURITY FIX: Force studentId to be the authenticated user
+      const validatedData = {
+        ...submissionData,
+        studentId: user.id
+      };
+      
+      // SECURITY FIX: Validate student is enrolled in the class for this assignment
+      const isEnrolled = await validateStudentEnrollment(user.id, validatedData.assignmentId);
+      if (!isEnrolled) {
+        return res.status(403).json({ 
+          error: 'Access denied',
+          message: 'You are not enrolled in the class for this assignment'
+        });
+      }
+      
+      // SECURITY FIX: Check if assignment exists and get due date
+      const assignment = await storage.getAssignment(validatedData.assignmentId);
+      if (!assignment) {
+        return res.status(404).json({ error: 'Assignment not found' });
+      }
+      
+      // SECURITY FIX: Server-side computation of isLate based on due date
+      const submittedAt = new Date();
+      const isLate = submittedAt > new Date(assignment.dueDate);
+      
+      const submissionWithTimestamp = {
+        ...validatedData,
+        submittedAt,
+        isLate
+      };
+      
+      const submission = await storage.createSubmission(submissionWithTimestamp);
+      res.status(201).json(submission);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: 'Invalid submission data', details: error.errors });
+      }
+      if (error.constraint && error.constraint.includes('unique')) {
+        return res.status(409).json({ error: 'You have already submitted for this assignment' });
+      }
+      console.error('Error creating submission:', error);
+      res.status(500).json({ error: 'Failed to create submission' });
+    }
+  });
+
+  // Grade Management
+  app.get('/api/submissions/:submissionId/grades', requireAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      
+      // SECURITY FIX: Validate access to submission before showing grades
+      const hasAccess = await validateGradeAccess(req.params.submissionId, user.id, user.role);
+      if (!hasAccess) {
+        return res.status(403).json({ 
+          error: 'Access denied',
+          message: 'You can only view grades for your own submissions or your students\' submissions'
+        });
+      }
+      
+      const grades = await storage.getGradesBySubmission(req.params.submissionId);
+      res.json(grades);
+    } catch (error: any) {
+      console.error('Error fetching grades:', error);
+      res.status(500).json({ error: 'Failed to fetch grades' });
+    }
+  });
+
+  app.get('/api/instructors/:instructorId/grades', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const requestedInstructorId = req.params.instructorId;
+      
+      // SECURITY FIX: Instructors can only view their own grades
+      if (user.id !== requestedInstructorId) {
+        return res.status(403).json({ 
+          error: 'Access denied',
+          message: 'You can only view your own grades'
+        });
+      }
+      
+      const grades = await storage.getGradesByInstructor(requestedInstructorId);
+      res.json(grades);
+    } catch (error: any) {
+      console.error('Error fetching instructor grades:', error);
+      res.status(500).json({ error: 'Failed to fetch instructor grades' });
+    }
+  });
+
+  app.post('/api/grades', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const validatedData = insertGradeSchema.parse(req.body);
+      
+      // SECURITY FIX: Validate instructor can grade this submission
+      const hasAccess = await validateSubmissionOwnership(validatedData.submissionId, user.id, 'instructor');
+      if (!hasAccess) {
+        return res.status(403).json({ 
+          error: 'Access denied',
+          message: 'You can only grade submissions from your own classes'
+        });
+      }
+      
+      // SECURITY FIX: Validate submission exists
+      const submission = await storage.getSubmission(validatedData.submissionId);
+      if (!submission) {
+        return res.status(404).json({ error: 'Submission not found' });
+      }
+      
+      const grade = await storage.createGrade(validatedData);
+      res.status(201).json(grade);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: 'Invalid grade data', details: error.errors });
+      }
+      console.error('Error creating grade:', error);
+      res.status(500).json({ error: 'Failed to create grade' });
     }
   });
 
