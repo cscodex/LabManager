@@ -62,6 +62,7 @@ export interface IStorage {
   // Enrollments
   getEnrollmentsByClass(classId: string): Promise<Enrollment[]>;
   getEnrollmentsByStudent(studentId: string): Promise<Enrollment[]>;
+  getEnrollment(id: string): Promise<Enrollment | undefined>;
   createEnrollment(enrollment: InsertEnrollment): Promise<Enrollment>;
   updateEnrollment(id: string, enrollment: Partial<InsertEnrollment>): Promise<Enrollment | undefined>;
   deleteEnrollment(id: string): Promise<boolean>;
@@ -327,6 +328,12 @@ export class DatabaseStorage implements IStorage {
   async getEnrollmentsByStudent(studentId: string): Promise<Enrollment[]> {
     return await db.query.enrollments.findMany({
       where: eq(schema.enrollments.studentId, studentId),
+    });
+  }
+
+  async getEnrollment(id: string): Promise<Enrollment | undefined> {
+    return await db.query.enrollments.findFirst({
+      where: eq(schema.enrollments.id, id),
     });
   }
 

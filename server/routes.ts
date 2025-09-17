@@ -404,6 +404,143 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Smart enrollment with automatic group and seat assignment
+  app.post('/api/classes/:classId/enroll-student', async (req, res) => {
+    try {
+      const { studentId } = req.body;
+      const classId = req.params.classId;
+      
+      if (!studentId) {
+        return res.status(400).json({ error: 'Student ID is required' });
+      }
+
+      // Verify student exists
+      const student = await storage.getUser(studentId);
+      if (!student || student.role !== 'student') {
+        return res.status(404).json({ error: 'Student not found' });
+      }
+
+      // Get class info to find the lab
+      const classData = await storage.getClass(classId);
+      if (!classData) {
+        return res.status(404).json({ error: 'Class not found' });
+      }
+
+      // Get available groups for this class and all enrollments (prevent inefficiency)
+      const [groups, allEnrollments] = await Promise.all([
+        storage.getGroupsByClass(classId),
+        storage.getEnrollmentsByClass(classId)
+      ]);
+      
+      // Find a group with available spots (fix race condition)
+      let selectedGroup = null;
+      for (const group of groups) {
+        const groupEnrollments = allEnrollments.filter(e => e.groupId === group.id);
+        
+        if (groupEnrollments.length < group.maxMembers) {
+          selectedGroup = group;
+          break;
+        }
+      }
+
+      // If no available group, try to create a new one
+      if (!selectedGroup) {
+        const computers = await storage.getComputersByLab(classData.labId);
+        const usedComputers = new Set(groups.map(g => g.computerId).filter(Boolean));
+        const availableComputer = computers.find(c => !usedComputers.has(c.id));
+        
+        if (availableComputer) {
+          selectedGroup = await storage.createGroup({
+            name: `Group ${groups.length + 1}`,
+            classId: classId,
+            computerId: availableComputer.id,
+            maxMembers: 4
+          });
+        } else if (computers.length > 0) {
+          // If no unassigned computers, still allow group creation but warn
+          selectedGroup = await storage.createGroup({
+            name: `Group ${groups.length + 1}`,
+            classId: classId,
+            computerId: computers[0].id, // Assign to first computer (shared use)
+            maxMembers: 4
+          });
+        }
+      }
+
+      if (!selectedGroup) {
+        return res.status(400).json({ error: 'No available groups or computers for enrollment' });
+      }
+
+      // Generate seat number using already fetched enrollment count (more efficient)
+      const seatNumber = `S${(allEnrollments.length + 1).toString().padStart(2, '0')}`;
+
+      // Create enrollment with group and seat assignment
+      const enrollment = await storage.createEnrollment({
+        studentId,
+        classId,
+        groupId: selectedGroup.id,
+        seatNumber
+      });
+
+      res.status(201).json({
+        enrollment,
+        group: selectedGroup,
+        message: 'Student enrolled and assigned to group successfully'
+      });
+
+    } catch (error: any) {
+      if (error.constraint || error.code === '23505') {
+        return res.status(409).json({ error: 'Student is already enrolled in this class' });
+      }
+      console.error('Error enrolling student:', error);
+      res.status(500).json({ error: 'Failed to enroll student' });
+    }
+  });
+
+  // Get enrollment details with group and computer info
+  app.get('/api/enrollments/:id/details', async (req, res) => {
+    try {
+      const enrollment = await storage.getEnrollment(req.params.id);
+      if (!enrollment) {
+        return res.status(404).json({ error: 'Enrollment not found' });
+      }
+
+      let groupInfo = null;
+      let computerInfo = null;
+      
+      if (enrollment.groupId) {
+        groupInfo = await storage.getGroup(enrollment.groupId);
+        if (groupInfo && groupInfo.computerId) {
+          computerInfo = await storage.getComputer(groupInfo.computerId);
+        }
+      }
+
+      const student = await storage.getUser(enrollment.studentId);
+      const classData = await storage.getClass(enrollment.classId);
+
+      // SECURITY: Remove password and other sensitive data from student object
+      const sanitizedStudent = student ? {
+        id: student.id,
+        firstName: student.firstName,
+        lastName: student.lastName,
+        email: student.email,
+        role: student.role
+      } : null;
+
+      res.json({
+        enrollment,
+        student: sanitizedStudent,
+        class: classData,
+        group: groupInfo,
+        computer: computerInfo
+      });
+
+    } catch (error: any) {
+      console.error('Error fetching enrollment details:', error);
+      res.status(500).json({ error: 'Failed to fetch enrollment details' });
+    }
+  });
+
   // Students Management
   app.get('/api/students', async (req, res) => {
     try {
