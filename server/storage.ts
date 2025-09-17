@@ -18,14 +18,19 @@ export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
+  getUsersByRole(role: string): Promise<User[]>;
   createUser(user: InsertUser): Promise<User>;
   createUserWithRole(user: InsertUserWithRole): Promise<User>;
+  updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined>;
+  deleteUser(id: string): Promise<boolean>;
   verifyPassword(plainPassword: string, hashedPassword: string): Promise<boolean>;
   
   // Labs
   getLabs(): Promise<Lab[]>;
   getLab(id: string): Promise<Lab | undefined>;
   createLab(lab: InsertLab): Promise<Lab>;
+  updateLab(id: string, lab: Partial<InsertLab>): Promise<Lab | undefined>;
+  deleteLab(id: string): Promise<boolean>;
   
   // Classes
   getClasses(): Promise<Class[]>;
@@ -33,21 +38,29 @@ export interface IStorage {
   getClassesByInstructor(instructorId: string): Promise<Class[]>;
   getClass(id: string): Promise<Class | undefined>;
   createClass(classData: InsertClass): Promise<Class>;
+  updateClass(id: string, classData: Partial<InsertClass>): Promise<Class | undefined>;
+  deleteClass(id: string): Promise<boolean>;
   
   // Computers
   getComputersByLab(labId: string): Promise<Computer[]>;
   getComputer(id: string): Promise<Computer | undefined>;
   createComputer(computer: InsertComputer): Promise<Computer>;
+  updateComputer(id: string, computer: Partial<InsertComputer>): Promise<Computer | undefined>;
+  deleteComputer(id: string): Promise<boolean>;
   
   // Groups
   getGroupsByClass(classId: string): Promise<Group[]>;
   getGroup(id: string): Promise<Group | undefined>;
   createGroup(group: InsertGroup): Promise<Group>;
+  updateGroup(id: string, group: Partial<InsertGroup>): Promise<Group | undefined>;
+  deleteGroup(id: string): Promise<boolean>;
   
   // Enrollments
   getEnrollmentsByClass(classId: string): Promise<Enrollment[]>;
   getEnrollmentsByStudent(studentId: string): Promise<Enrollment[]>;
   createEnrollment(enrollment: InsertEnrollment): Promise<Enrollment>;
+  updateEnrollment(id: string, enrollment: Partial<InsertEnrollment>): Promise<Enrollment | undefined>;
+  deleteEnrollment(id: string): Promise<boolean>;
   
   // Sessions
   getSessionsByClass(classId: string): Promise<Session[]>;
@@ -117,6 +130,37 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
+  async getUsersByRole(role: string): Promise<User[]> {
+    return await db.query.users.findMany({
+      where: eq(schema.users.role, role),
+    });
+  }
+
+  async updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined> {
+    let updateData = { ...user };
+    
+    // Hash password if it's being updated
+    if (user.password) {
+      const saltRounds = 12;
+      updateData.password = await bcrypt.hash(user.password, saltRounds);
+    }
+    
+    const result = await db.update(schema.users)
+      .set(updateData)
+      .where(eq(schema.users.id, id))
+      .returning();
+    
+    return result[0];
+  }
+
+  async deleteUser(id: string): Promise<boolean> {
+    const result = await db.delete(schema.users)
+      .where(eq(schema.users.id, id))
+      .returning();
+    
+    return result.length > 0;
+  }
+
   async verifyPassword(plainPassword: string, hashedPassword: string): Promise<boolean> {
     return await bcrypt.compare(plainPassword, hashedPassword);
   }
@@ -135,6 +179,23 @@ export class DatabaseStorage implements IStorage {
   async createLab(lab: InsertLab): Promise<Lab> {
     const result = await db.insert(schema.labs).values(lab).returning();
     return result[0];
+  }
+
+  async updateLab(id: string, lab: Partial<InsertLab>): Promise<Lab | undefined> {
+    const result = await db.update(schema.labs)
+      .set(lab)
+      .where(eq(schema.labs.id, id))
+      .returning();
+    
+    return result[0];
+  }
+
+  async deleteLab(id: string): Promise<boolean> {
+    const result = await db.delete(schema.labs)
+      .where(eq(schema.labs.id, id))
+      .returning();
+    
+    return result.length > 0;
   }
 
   // Classes
@@ -165,6 +226,23 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
+  async updateClass(id: string, classData: Partial<InsertClass>): Promise<Class | undefined> {
+    const result = await db.update(schema.classes)
+      .set(classData)
+      .where(eq(schema.classes.id, id))
+      .returning();
+    
+    return result[0];
+  }
+
+  async deleteClass(id: string): Promise<boolean> {
+    const result = await db.delete(schema.classes)
+      .where(eq(schema.classes.id, id))
+      .returning();
+    
+    return result.length > 0;
+  }
+
   // Computers
   async getComputersByLab(labId: string): Promise<Computer[]> {
     return await db.query.computers.findMany({
@@ -181,6 +259,23 @@ export class DatabaseStorage implements IStorage {
   async createComputer(computer: InsertComputer): Promise<Computer> {
     const result = await db.insert(schema.computers).values(computer).returning();
     return result[0];
+  }
+
+  async updateComputer(id: string, computer: Partial<InsertComputer>): Promise<Computer | undefined> {
+    const result = await db.update(schema.computers)
+      .set(computer)
+      .where(eq(schema.computers.id, id))
+      .returning();
+    
+    return result[0];
+  }
+
+  async deleteComputer(id: string): Promise<boolean> {
+    const result = await db.delete(schema.computers)
+      .where(eq(schema.computers.id, id))
+      .returning();
+    
+    return result.length > 0;
   }
 
   // Groups
@@ -201,6 +296,23 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
+  async updateGroup(id: string, group: Partial<InsertGroup>): Promise<Group | undefined> {
+    const result = await db.update(schema.groups)
+      .set(group)
+      .where(eq(schema.groups.id, id))
+      .returning();
+    
+    return result[0];
+  }
+
+  async deleteGroup(id: string): Promise<boolean> {
+    const result = await db.delete(schema.groups)
+      .where(eq(schema.groups.id, id))
+      .returning();
+    
+    return result.length > 0;
+  }
+
   // Enrollments
   async getEnrollmentsByClass(classId: string): Promise<Enrollment[]> {
     return await db.query.enrollments.findMany({
@@ -217,6 +329,23 @@ export class DatabaseStorage implements IStorage {
   async createEnrollment(enrollment: InsertEnrollment): Promise<Enrollment> {
     const result = await db.insert(schema.enrollments).values(enrollment).returning();
     return result[0];
+  }
+
+  async updateEnrollment(id: string, enrollment: Partial<InsertEnrollment>): Promise<Enrollment | undefined> {
+    const result = await db.update(schema.enrollments)
+      .set(enrollment)
+      .where(eq(schema.enrollments.id, id))
+      .returning();
+    
+    return result[0];
+  }
+
+  async deleteEnrollment(id: string): Promise<boolean> {
+    const result = await db.delete(schema.enrollments)
+      .where(eq(schema.enrollments.id, id))
+      .returning();
+    
+    return result.length > 0;
   }
 
   // Sessions
