@@ -69,8 +69,14 @@ export interface IStorage {
   
   // Sessions
   getSessionsByClass(classId: string): Promise<Session[]>;
+  getSessionsByLab(labId: string): Promise<Session[]>;
   getSession(id: string): Promise<Session | undefined>;
   createSession(session: InsertSession): Promise<Session>;
+  updateSession(id: string, session: Partial<InsertSession>): Promise<Session | undefined>;
+  deleteSession(id: string): Promise<boolean>;
+  
+  // Computer conflict checking
+  checkComputerConflicts(labId: string, scheduledAt: Date, duration: number, excludeSessionId?: string): Promise<{ hasConflicts: boolean; conflictingSessions: Session[] }>;
   
   // Assignments
   getAssignmentsBySession(sessionId: string): Promise<Assignment[]>;
@@ -365,6 +371,29 @@ export class DatabaseStorage implements IStorage {
       where: eq(schema.sessions.classId, classId),
     });
   }
+  
+  async getSessionsByLab(labId: string): Promise<Session[]> {
+    // Get all classes in the lab
+    const labClasses = await db.query.classes.findMany({
+      where: eq(schema.classes.labId, labId),
+    });
+    
+    // Get all sessions for those classes
+    const classIds = labClasses.map(c => c.id);
+    if (classIds.length === 0) return [];
+    
+    // Get sessions for all classes in the lab
+    const sessionsPromises = classIds.map(classId => 
+      db.query.sessions.findMany({
+        where: eq(schema.sessions.classId, classId),
+      })
+    );
+    
+    const sessionArrays = await Promise.all(sessionsPromises);
+    const sessions = sessionArrays.flat();
+    
+    return sessions;
+  }
 
   async getSession(id: string): Promise<Session | undefined> {
     return await db.query.sessions.findFirst({
@@ -375,6 +404,50 @@ export class DatabaseStorage implements IStorage {
   async createSession(session: InsertSession): Promise<Session> {
     const result = await db.insert(schema.sessions).values(session).returning();
     return result[0];
+  }
+
+  async updateSession(id: string, session: Partial<InsertSession>): Promise<Session | undefined> {
+    const result = await db.update(schema.sessions)
+      .set(session)
+      .where(eq(schema.sessions.id, id))
+      .returning();
+    
+    return result[0];
+  }
+
+  async deleteSession(id: string): Promise<boolean> {
+    const result = await db.delete(schema.sessions)
+      .where(eq(schema.sessions.id, id))
+      .returning();
+    
+    return result.length > 0;
+  }
+  
+  // Computer conflict checking
+  async checkComputerConflicts(labId: string, scheduledAt: Date, duration: number, excludeSessionId?: string): Promise<{ hasConflicts: boolean; conflictingSessions: Session[] }> {
+    const sessionStart = new Date(scheduledAt);
+    const sessionEnd = new Date(sessionStart.getTime() + duration * 60000);
+    
+    // Get all sessions for this lab
+    const labSessions = await this.getSessionsByLab(labId);
+    
+    const conflictingSessions = labSessions.filter(session => {
+      // Skip the session being updated if excludeSessionId is provided
+      if (excludeSessionId && session.id === excludeSessionId) {
+        return false;
+      }
+      
+      const existingStart = new Date(session.scheduledAt);
+      const existingEnd = new Date(existingStart.getTime() + session.duration * 60000);
+      
+      // Check for time overlap
+      return sessionStart < existingEnd && sessionEnd > existingStart;
+    });
+    
+    return {
+      hasConflicts: conflictingSessions.length > 0,
+      conflictingSessions
+    };
   }
 
   // Assignments

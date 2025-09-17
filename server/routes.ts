@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { 
@@ -8,8 +8,73 @@ import {
   insertClassSchema, 
   insertComputerSchema,
   insertGroupSchema,
-  insertEnrollmentSchema 
+  insertEnrollmentSchema,
+  insertSessionSchema
 } from "@shared/schema";
+
+// SECURITY FIX: Basic authentication middleware (placeholder until Replit Auth is implemented)
+// TODO: Replace with proper Replit Auth when authentication system is set up
+const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
+  // For now, check for a basic user ID in headers (temporary security measure)
+  const userId = req.headers['x-user-id'] as string;
+  
+  if (!userId) {
+    return res.status(401).json({ 
+      error: 'Authentication required',
+      message: 'Please provide user credentials to access this resource' 
+    });
+  }
+  
+  // Verify user exists
+  try {
+    const user = await storage.getUser(userId);
+    if (!user) {
+      return res.status(401).json({ 
+        error: 'Invalid credentials',
+        message: 'User not found' 
+      });
+    }
+    
+    // Add user to request for downstream use
+    (req as any).user = {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role
+    };
+    
+    next();
+  } catch (error) {
+    return res.status(500).json({ 
+      error: 'Authentication error',
+      message: 'Failed to verify credentials' 
+    });
+  }
+};
+
+// SECURITY FIX: Role-based access control
+const requireRole = (allowedRoles: string[]) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const user = (req as any).user;
+    
+    if (!user) {
+      return res.status(401).json({ 
+        error: 'Authentication required',
+        message: 'Please authenticate before accessing this resource'
+      });
+    }
+    
+    if (!allowedRoles.includes(user.role)) {
+      return res.status(403).json({ 
+        error: 'Access denied',
+        message: `This resource requires one of the following roles: ${allowedRoles.join(', ')}`
+      });
+    }
+    
+    next();
+  };
+};
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Labs Management
@@ -634,6 +699,313 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('Error fetching student enrollments:', error);
       res.status(500).json({ error: 'Failed to fetch student enrollments' });
+    }
+  });
+
+  // Lab Sessions Management
+  // SECURITY FIX: Protect session routes with authentication
+  app.get('/api/classes/:classId/sessions', requireAuth, async (req, res) => {
+    try {
+      const sessions = await storage.getSessionsByClass(req.params.classId);
+      res.json(sessions);
+    } catch (error: any) {
+      console.error('Error fetching sessions:', error);
+      res.status(500).json({ error: 'Failed to fetch sessions' });
+    }
+  });
+
+  app.get('/api/sessions/:id', requireAuth, async (req, res) => {
+    try {
+      const session = await storage.getSession(req.params.id);
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+      res.json(session);
+    } catch (error: any) {
+      console.error('Error fetching session:', error);
+      res.status(500).json({ error: 'Failed to fetch session' });
+    }
+  });
+
+  app.post('/api/sessions', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      const validatedData = insertSessionSchema.parse(req.body);
+      
+      // FUNCTIONALITY FIX: Check for scheduling conflicts before creating session
+      const sessionStart = new Date(validatedData.scheduledAt);
+      const sessionEnd = new Date(sessionStart.getTime() + validatedData.duration * 60000);
+      
+      // Get class info to find the lab
+      const classData = await storage.getClass(validatedData.classId);
+      if (!classData) {
+        return res.status(404).json({ error: 'Class not found' });
+      }
+
+      // Get all classes in the same lab
+      const labClasses = await storage.getClassesByLab(classData.labId);
+      
+      // Check for scheduling conflicts in the same lab
+      for (const labClass of labClasses) {
+        const sessions = await storage.getSessionsByClass(labClass.id);
+        
+        for (const session of sessions) {
+          const existingStart = new Date(session.scheduledAt);
+          const existingEnd = new Date(existingStart.getTime() + session.duration * 60000);
+          
+          // Check for overlap
+          if (sessionStart < existingEnd && sessionEnd > existingStart) {
+            return res.status(409).json({
+              error: 'Scheduling conflict detected',
+              conflictingSession: {
+                id: session.id,
+                title: session.title,
+                class: labClass.name + ' (' + labClass.code + '-' + labClass.section + ')',
+                scheduledAt: session.scheduledAt,
+                duration: session.duration
+              },
+              message: `Cannot schedule session as it conflicts with existing session "${session.title}" in the same lab`
+            });
+          }
+        }
+      }
+      
+      const session = await storage.createSession(validatedData);
+      res.status(201).json(session);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: 'Invalid session data', details: error.errors });
+      }
+      console.error('Error creating session:', error);
+      res.status(500).json({ error: 'Failed to create session' });
+    }
+  });
+
+  app.patch('/api/sessions/:id', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      const validatedData = insertSessionSchema.partial().parse(req.body);
+      
+      // Get the existing session to check for conflicts
+      const existingSession = await storage.getSession(req.params.id);
+      if (!existingSession) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+      
+      // FUNCTIONALITY FIX: Check for scheduling conflicts if time-related fields are being updated
+      if (validatedData.scheduledAt || validatedData.duration || validatedData.classId) {
+        // Use new values if provided, otherwise use existing values
+        const newScheduledAt = validatedData.scheduledAt || existingSession.scheduledAt;
+        const newDuration = validatedData.duration || existingSession.duration;
+        const newClassId = validatedData.classId || existingSession.classId;
+        
+        const sessionStart = new Date(newScheduledAt);
+        const sessionEnd = new Date(sessionStart.getTime() + newDuration * 60000);
+        
+        // Get class info to find the lab
+        const classData = await storage.getClass(newClassId);
+        if (!classData) {
+          return res.status(404).json({ error: 'Class not found' });
+        }
+
+        // Get all classes in the same lab
+        const labClasses = await storage.getClassesByLab(classData.labId);
+        
+        // Check for scheduling conflicts in the same lab
+        for (const labClass of labClasses) {
+          const sessions = await storage.getSessionsByClass(labClass.id);
+          
+          for (const session of sessions) {
+            // Skip the session being updated
+            if (session.id === req.params.id) continue;
+            
+            const existingStart = new Date(session.scheduledAt);
+            const existingEnd = new Date(existingStart.getTime() + session.duration * 60000);
+            
+            // Check for overlap
+            if (sessionStart < existingEnd && sessionEnd > existingStart) {
+              return res.status(409).json({
+                error: 'Scheduling conflict detected',
+                conflictingSession: {
+                  id: session.id,
+                  title: session.title,
+                  class: labClass.name + ' (' + labClass.code + '-' + labClass.section + ')',
+                  scheduledAt: session.scheduledAt,
+                  duration: session.duration
+                },
+                message: `Cannot update session as it would conflict with existing session "${session.title}" in the same lab`
+              });
+            }
+          }
+        }
+      }
+      
+      const session = await storage.updateSession(req.params.id, validatedData);
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+      res.json(session);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: 'Invalid session data', details: error.errors });
+      }
+      console.error('Error updating session:', error);
+      res.status(500).json({ error: 'Failed to update session' });
+    }
+  });
+
+  app.delete('/api/sessions/:id', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      const deleted = await storage.deleteSession(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+      res.status(204).send();
+    } catch (error: any) {
+      console.error('Error deleting session:', error);
+      res.status(500).json({ error: 'Failed to delete session' });
+    }
+  });
+
+  // Get session details with groups, computers, and enrollments
+  // SECURITY FIX: Protect sensitive session details endpoint
+  app.get('/api/sessions/:id/details', requireAuth, async (req, res) => {
+    try {
+      const session = await storage.getSession(req.params.id);
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+
+      // Get class and lab information
+      const classData = await storage.getClass(session.classId);
+      if (!classData) {
+        return res.status(404).json({ error: 'Class not found for this session' });
+      }
+
+      // Get groups for this class
+      const groups = await storage.getGroupsByClass(session.classId);
+      
+      // OPTIMIZATION: Batch fetch all enrollments for the class once to avoid N+1 queries
+      const allEnrollments = await storage.getEnrollmentsByClass(session.classId);
+      
+      // OPTIMIZATION: Batch fetch all students for the enrollments
+      const studentIds = allEnrollments.map(e => e.studentId);
+      const studentPromises = studentIds.map(id => storage.getUser(id));
+      const allStudents = await Promise.all(studentPromises);
+      
+      // Create a map for quick student lookup
+      const studentsMap = new Map();
+      allStudents.forEach(student => {
+        if (student) {
+          // SECURITY FIX: Remove password and other sensitive data from student objects
+          studentsMap.set(student.id, {
+            id: student.id,
+            firstName: student.firstName,
+            lastName: student.lastName,
+            email: student.email,
+            role: student.role
+          });
+        }
+      });
+      
+      // Process groups with optimized data fetching
+      const groupsWithComputers = await Promise.all(
+        groups.map(async (group) => {
+          let computer = null;
+          if (group.computerId) {
+            computer = await storage.getComputer(group.computerId);
+          }
+          
+          // Get students for this group using the pre-fetched data
+          const groupEnrollments = allEnrollments.filter(e => e.groupId === group.id);
+          const groupStudents = groupEnrollments.map(enrollment => {
+            const student = studentsMap.get(enrollment.studentId);
+            return {
+              enrollment: {
+                id: enrollment.id,
+                studentId: enrollment.studentId,
+                classId: enrollment.classId,
+                groupId: enrollment.groupId,
+                seatNumber: enrollment.seatNumber,
+                enrolledAt: enrollment.enrolledAt,
+                isActive: enrollment.isActive
+              },
+              student: student || null
+            };
+          });
+
+          return {
+            ...group,
+            computer,
+            students: groupStudents
+          };
+        })
+      );
+
+      res.json({
+        session,
+        class: classData,
+        groups: groupsWithComputers,
+        totalStudents: groupsWithComputers.reduce((sum, group) => sum + group.students.length, 0)
+      });
+
+    } catch (error: any) {
+      console.error('Error fetching session details:', error);
+      res.status(500).json({ error: 'Failed to fetch session details' });
+    }
+  });
+
+  // Schedule management - check for conflicts
+  app.post('/api/sessions/check-conflicts', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      const { classId, scheduledAt, duration } = req.body;
+      
+      if (!classId || !scheduledAt || !duration) {
+        return res.status(400).json({ error: 'classId, scheduledAt, and duration are required' });
+      }
+
+      const sessionStart = new Date(scheduledAt);
+      const sessionEnd = new Date(sessionStart.getTime() + duration * 60000); // duration in minutes
+      
+      // Get class info to find the lab
+      const classData = await storage.getClass(classId);
+      if (!classData) {
+        return res.status(404).json({ error: 'Class not found' });
+      }
+
+      // Get all classes in the same lab
+      const labClasses = await storage.getClassesByLab(classData.labId);
+      
+      // Check for scheduling conflicts in the same lab
+      const conflicts = [];
+      for (const labClass of labClasses) {
+        const sessions = await storage.getSessionsByClass(labClass.id);
+        
+        for (const session of sessions) {
+          const existingStart = new Date(session.scheduledAt);
+          const existingEnd = new Date(existingStart.getTime() + session.duration * 60000);
+          
+          // Check for overlap
+          if (sessionStart < existingEnd && sessionEnd > existingStart) {
+            conflicts.push({
+              session,
+              class: labClass,
+              overlapStart: new Date(Math.max(sessionStart.getTime(), existingStart.getTime())),
+              overlapEnd: new Date(Math.min(sessionEnd.getTime(), existingEnd.getTime()))
+            });
+          }
+        }
+      }
+
+      res.json({
+        hasConflicts: conflicts.length > 0,
+        conflicts,
+        message: conflicts.length > 0 
+          ? `Found ${conflicts.length} scheduling conflict(s) in the same lab`
+          : 'No scheduling conflicts detected'
+      });
+
+    } catch (error: any) {
+      console.error('Error checking scheduling conflicts:', error);
+      res.status(500).json({ error: 'Failed to check scheduling conflicts' });
     }
   });
 
