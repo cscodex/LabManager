@@ -1327,6 +1327,501 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Analytics and Reporting
+  app.get('/api/analytics/lab-utilization', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      const { startDate, endDate } = req.query;
+      
+      // Get all labs
+      const labs = await storage.getLabs();
+      
+      const analyticsData = await Promise.all(labs.map(async (lab) => {
+        // Get classes for this lab
+        const classes = await storage.getClassesByLab(lab.id);
+        
+        let totalSessions = 0;
+        let totalStudents = 0;
+        let sessionHours = 0;
+        
+        for (const classData of classes) {
+          const sessions = await storage.getSessionsByClass(classData.id);
+          const enrollments = await storage.getEnrollmentsByClass(classData.id);
+          
+          // Filter sessions by date if provided
+          let filteredSessions = sessions;
+          if (startDate || endDate) {
+            filteredSessions = sessions.filter(session => {
+              const sessionDate = new Date(session.scheduledAt);
+              if (startDate && sessionDate < new Date(startDate as string)) return false;
+              if (endDate && sessionDate > new Date(endDate as string)) return false;
+              return true;
+            });
+          }
+          
+          totalSessions += filteredSessions.length;
+          totalStudents += enrollments.filter(e => e.isActive).length;
+          sessionHours += filteredSessions.reduce((sum, s) => sum + s.duration / 60, 0);
+        }
+        
+        return {
+          lab: {
+            id: lab.id,
+            name: lab.name,
+            location: lab.location,
+            capacity: lab.capacity
+          },
+          utilization: {
+            totalClasses: classes.filter(c => c.isActive).length,
+            totalSessions,
+            totalStudents,
+            sessionHours: Math.round(sessionHours * 10) / 10,
+            utilizationRate: lab.capacity > 0 ? Math.round((totalStudents / lab.capacity) * 100) : 0
+          }
+        };
+      }));
+      
+      res.json({
+        dateRange: { startDate, endDate },
+        labs: analyticsData,
+        summary: {
+          totalLabs: labs.length,
+          totalClasses: analyticsData.reduce((sum, lab) => sum + lab.utilization.totalClasses, 0),
+          totalSessions: analyticsData.reduce((sum, lab) => sum + lab.utilization.totalSessions, 0),
+          totalStudents: analyticsData.reduce((sum, lab) => sum + lab.utilization.totalStudents, 0),
+          totalSessionHours: Math.round(analyticsData.reduce((sum, lab) => sum + lab.utilization.sessionHours, 0) * 10) / 10
+        }
+      });
+    } catch (error: any) {
+      console.error('Error generating lab utilization analytics:', error);
+      res.status(500).json({ error: 'Failed to generate lab utilization analytics' });
+    }
+  });
+
+  app.get('/api/analytics/class-performance/:classId', requireAuth, async (req, res) => {
+    try {
+      const classId = req.params.classId;
+      const { userId, role } = req as any; // From auth middleware
+      
+      // Get class details
+      const classData = await storage.getClass(classId);
+      if (!classData) {
+        return res.status(404).json({ error: 'Class not found' });
+      }
+      
+      // Authorization: Students can only see their own class performance, instructors can see classes they teach
+      if (role === 'student') {
+        const enrollment = await storage.getEnrollmentsByStudent(userId);
+        if (!enrollment.some(e => e.classId === classId)) {
+          return res.status(403).json({ error: 'Access denied' });
+        }
+      } else if (role === 'instructor' && classData.instructorId !== userId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      
+      // Get sessions, assignments, and submissions for analysis
+      const sessions = await storage.getSessionsByClass(classId);
+      const enrollments = await storage.getEnrollmentsByClass(classId);
+      
+      let allAssignments = [];
+      let allSubmissions = [];
+      let allGrades = [];
+      
+      for (const session of sessions) {
+        const assignments = await storage.getAssignmentsBySession(session.id);
+        allAssignments.push(...assignments);
+        
+        for (const assignment of assignments) {
+          const submissions = await storage.getSubmissionsByAssignment(assignment.id);
+          allSubmissions.push(...submissions);
+          
+          for (const submission of submissions) {
+            const grades = await storage.getGradesBySubmission(submission.id);
+            allGrades.push(...grades);
+          }
+        }
+      }
+      
+      // Calculate performance metrics
+      const activeStudents = enrollments.filter(e => e.isActive).length;
+      const completionRate = allAssignments.length > 0 ? 
+        Math.round((allSubmissions.length / (allAssignments.length * activeStudents)) * 100) : 0;
+      
+      const lateSubmissions = allSubmissions.filter(s => s.isLate).length;
+      const onTimeRate = allSubmissions.length > 0 ? 
+        Math.round(((allSubmissions.length - lateSubmissions) / allSubmissions.length) * 100) : 0;
+      
+      const averageScore = allGrades.length > 0 ? 
+        Math.round((allGrades.reduce((sum, g) => sum + (g.score / g.maxScore) * 100, 0) / allGrades.length) * 10) / 10 : 0;
+      
+      // Grade distribution
+      const gradeDistribution = {
+        A: 0, B: 0, C: 0, D: 0, F: 0
+      };
+      
+      allGrades.forEach(grade => {
+        const percentage = (grade.score / grade.maxScore) * 100;
+        if (percentage >= 90) gradeDistribution.A++;
+        else if (percentage >= 80) gradeDistribution.B++;
+        else if (percentage >= 70) gradeDistribution.C++;
+        else if (percentage >= 60) gradeDistribution.D++;
+        else gradeDistribution.F++;
+      });
+      
+      res.json({
+        class: classData,
+        performance: {
+          totalStudents: activeStudents,
+          totalAssignments: allAssignments.length,
+          totalSubmissions: allSubmissions.length,
+          totalGrades: allGrades.length,
+          completionRate,
+          onTimeSubmissionRate: onTimeRate,
+          lateSubmissions,
+          averageScore,
+          gradeDistribution
+        },
+        timeline: {
+          sessionsCompleted: sessions.length,
+          upcomingSessions: sessions.filter(s => new Date(s.scheduledAt) > new Date()).length
+        }
+      });
+    } catch (error: any) {
+      console.error('Error generating class performance analytics:', error);
+      res.status(500).json({ error: 'Failed to generate class performance analytics' });
+    }
+  });
+
+  app.get('/api/analytics/assignment-completion', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      const { classId, sessionId } = req.query;
+      
+      let assignments = [];
+      let scope = 'all';
+      
+      if (sessionId) {
+        assignments = await storage.getAssignmentsBySession(sessionId as string);
+        scope = 'session';
+      } else if (classId) {
+        const sessions = await storage.getSessionsByClass(classId as string);
+        for (const session of sessions) {
+          const sessionAssignments = await storage.getAssignmentsBySession(session.id);
+          assignments.push(...sessionAssignments);
+        }
+        scope = 'class';
+      } else {
+        // Get assignments for all classes taught by this instructor
+        const { userId } = req as any;
+        const classes = await storage.getClassesByInstructor(userId);
+        
+        for (const classData of classes) {
+          const sessions = await storage.getSessionsByClass(classData.id);
+          for (const session of sessions) {
+            const sessionAssignments = await storage.getAssignmentsBySession(session.id);
+            assignments.push(...sessionAssignments);
+          }
+        }
+        scope = 'instructor';
+      }
+      
+      // Analyze each assignment
+      const assignmentAnalytics = await Promise.all(assignments.map(async (assignment) => {
+        const submissions = await storage.getSubmissionsByAssignment(assignment.id);
+        const grades = [];
+        
+        for (const submission of submissions) {
+          const submissionGrades = await storage.getGradesBySubmission(submission.id);
+          grades.push(...submissionGrades);
+        }
+        
+        // Get expected submission count (students enrolled in the class of this assignment's session)
+        const session = await storage.getSession(assignment.sessionId);
+        const enrollments = session ? await storage.getEnrollmentsByClass(session.classId) : [];
+        const expectedSubmissions = enrollments.filter(e => e.isActive).length;
+        
+        const completionRate = expectedSubmissions > 0 ? 
+          Math.round((submissions.length / expectedSubmissions) * 100) : 0;
+        
+        const gradingRate = submissions.length > 0 ? 
+          Math.round((grades.length / submissions.length) * 100) : 0;
+        
+        const lateSubmissions = submissions.filter(s => s.isLate).length;
+        
+        return {
+          assignment: {
+            id: assignment.id,
+            title: assignment.title,
+            dueDate: assignment.dueDate,
+            maxPoints: assignment.maxPoints,
+            sessionId: assignment.sessionId
+          },
+          metrics: {
+            expectedSubmissions,
+            actualSubmissions: submissions.length,
+            gradedSubmissions: grades.length,
+            completionRate,
+            gradingRate,
+            lateSubmissions,
+            onTimeSubmissions: submissions.length - lateSubmissions
+          },
+          averageScore: grades.length > 0 ? 
+            Math.round((grades.reduce((sum, g) => sum + (g.score / g.maxScore) * 100, 0) / grades.length) * 10) / 10 : null
+        };
+      }));
+      
+      res.json({
+        scope,
+        totalAssignments: assignments.length,
+        assignments: assignmentAnalytics,
+        summary: {
+          totalExpectedSubmissions: assignmentAnalytics.reduce((sum, a) => sum + a.metrics.expectedSubmissions, 0),
+          totalActualSubmissions: assignmentAnalytics.reduce((sum, a) => sum + a.metrics.actualSubmissions, 0),
+          totalGradedSubmissions: assignmentAnalytics.reduce((sum, a) => sum + a.metrics.gradedSubmissions, 0),
+          averageCompletionRate: assignmentAnalytics.length > 0 ? 
+            Math.round(assignmentAnalytics.reduce((sum, a) => sum + a.metrics.completionRate, 0) / assignmentAnalytics.length) : 0,
+          averageGradingRate: assignmentAnalytics.length > 0 ? 
+            Math.round(assignmentAnalytics.reduce((sum, a) => sum + a.metrics.gradingRate, 0) / assignmentAnalytics.length) : 0
+        }
+      });
+    } catch (error: any) {
+      console.error('Error generating assignment completion analytics:', error);
+      res.status(500).json({ error: 'Failed to generate assignment completion analytics' });
+    }
+  });
+
+  app.get('/api/analytics/student-performance/:studentId', requireAuth, async (req, res) => {
+    try {
+      const studentId = req.params.studentId;
+      const { userId, role } = req as any;
+      
+      // Authorization: Students can only see their own performance, instructors can see students in their classes
+      if (role === 'student' && userId !== studentId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      
+      if (role === 'instructor') {
+        // Check if student is in any of the instructor's classes
+        const instructorClasses = await storage.getClassesByInstructor(userId);
+        const studentEnrollments = await storage.getEnrollmentsByStudent(studentId);
+        
+        const hasAccess = instructorClasses.some(cls => 
+          studentEnrollments.some(enrollment => enrollment.classId === cls.id)
+        );
+        
+        if (!hasAccess) {
+          return res.status(403).json({ error: 'Student not in your classes' });
+        }
+      }
+      
+      // Get student information
+      const student = await storage.getUser(studentId);
+      if (!student || student.role !== 'student') {
+        return res.status(404).json({ error: 'Student not found' });
+      }
+      
+      // Get student's enrollments and performance data
+      const enrollments = await storage.getEnrollmentsByStudent(studentId);
+      const submissions = await storage.getSubmissionsByStudent(studentId);
+      
+      let allGrades = [];
+      for (const submission of submissions) {
+        const grades = await storage.getGradesBySubmission(submission.id);
+        allGrades.push(...grades);
+      }
+      
+      // Calculate performance metrics per class
+      const classPerformance = await Promise.all(enrollments.map(async (enrollment) => {
+        const classData = await storage.getClass(enrollment.classId);
+        if (!classData) return null;
+        
+        // Get assignments for this class
+        const sessions = await storage.getSessionsByClass(classData.id);
+        let classAssignments = [];
+        
+        for (const session of sessions) {
+          const assignments = await storage.getAssignmentsBySession(session.id);
+          classAssignments.push(...assignments);
+        }
+        
+        // Get student's submissions and grades for this class
+        const classSubmissions = submissions.filter(sub => 
+          classAssignments.some(assignment => assignment.id === sub.assignmentId)
+        );
+        
+        const classGrades = [];
+        for (const submission of classSubmissions) {
+          const grades = await storage.getGradesBySubmission(submission.id);
+          classGrades.push(...grades);
+        }
+        
+        const completionRate = classAssignments.length > 0 ? 
+          Math.round((classSubmissions.length / classAssignments.length) * 100) : 0;
+        
+        const averageScore = classGrades.length > 0 ? 
+          Math.round((classGrades.reduce((sum, g) => sum + (g.score / g.maxScore) * 100, 0) / classGrades.length) * 10) / 10 : 0;
+        
+        const lateSubmissions = classSubmissions.filter(s => s.isLate).length;
+        
+        return {
+          class: classData,
+          enrollment,
+          performance: {
+            totalAssignments: classAssignments.length,
+            completedAssignments: classSubmissions.length,
+            gradedAssignments: classGrades.length,
+            completionRate,
+            averageScore,
+            lateSubmissions,
+            onTimeSubmissions: classSubmissions.length - lateSubmissions
+          }
+        };
+      }));
+      
+      const validClassPerformance = classPerformance.filter(cp => cp !== null);
+      
+      // Overall student performance
+      const overallAverageScore = allGrades.length > 0 ? 
+        Math.round((allGrades.reduce((sum, g) => sum + (g.score / g.maxScore) * 100, 0) / allGrades.length) * 10) / 10 : 0;
+      
+      const totalLateSubmissions = submissions.filter(s => s.isLate).length;
+      const onTimeRate = submissions.length > 0 ? 
+        Math.round(((submissions.length - totalLateSubmissions) / submissions.length) * 100) : 0;
+      
+      res.json({
+        student: {
+          id: student.id,
+          firstName: student.firstName,
+          lastName: student.lastName,
+          email: student.email
+        },
+        overall: {
+          totalClasses: enrollments.filter(e => e.isActive).length,
+          totalSubmissions: submissions.length,
+          totalGrades: allGrades.length,
+          overallAverageScore,
+          onTimeSubmissionRate: onTimeRate,
+          totalLateSubmissions
+        },
+        classesByPerformance: validClassPerformance.sort((a, b) => b.performance.averageScore - a.performance.averageScore)
+      });
+    } catch (error: any) {
+      console.error('Error generating student performance analytics:', error);
+      res.status(500).json({ error: 'Failed to generate student performance analytics' });
+    }
+  });
+
+  app.get('/api/analytics/multi-lab-comparison', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      const { semester, year } = req.query;
+      
+      // Get all labs
+      const labs = await storage.getLabs();
+      
+      const comparison = await Promise.all(labs.map(async (lab) => {
+        // Get classes for this lab, optionally filtered by semester/year
+        let classes = await storage.getClassesByLab(lab.id);
+        
+        if (semester || year) {
+          classes = classes.filter(cls => {
+            if (semester && cls.semester !== semester) return false;
+            if (year && cls.year !== parseInt(year as string)) return false;
+            return true;
+          });
+        }
+        
+        let totalStudents = 0;
+        let totalAssignments = 0;
+        let totalSubmissions = 0;
+        let totalGrades = 0;
+        let allScores = [];
+        let totalLateSubmissions = 0;
+        
+        for (const classData of classes) {
+          const enrollments = await storage.getEnrollmentsByClass(classData.id);
+          totalStudents += enrollments.filter(e => e.isActive).length;
+          
+          const sessions = await storage.getSessionsByClass(classData.id);
+          
+          for (const session of sessions) {
+            const assignments = await storage.getAssignmentsBySession(session.id);
+            totalAssignments += assignments.length;
+            
+            for (const assignment of assignments) {
+              const submissions = await storage.getSubmissionsByAssignment(assignment.id);
+              totalSubmissions += submissions.length;
+              totalLateSubmissions += submissions.filter(s => s.isLate).length;
+              
+              for (const submission of submissions) {
+                const grades = await storage.getGradesBySubmission(submission.id);
+                totalGrades += grades.length;
+                
+                grades.forEach(grade => {
+                  allScores.push((grade.score / grade.maxScore) * 100);
+                });
+              }
+            }
+          }
+        }
+        
+        const averageScore = allScores.length > 0 ? 
+          Math.round((allScores.reduce((sum, score) => sum + score, 0) / allScores.length) * 10) / 10 : 0;
+        
+        const completionRate = (totalAssignments * totalStudents) > 0 ? 
+          Math.round((totalSubmissions / (totalAssignments * totalStudents)) * 100) : 0;
+        
+        const onTimeRate = totalSubmissions > 0 ? 
+          Math.round(((totalSubmissions - totalLateSubmissions) / totalSubmissions) * 100) : 0;
+        
+        return {
+          lab: {
+            id: lab.id,
+            name: lab.name,
+            location: lab.location,
+            capacity: lab.capacity
+          },
+          metrics: {
+            totalClasses: classes.filter(c => c.isActive).length,
+            totalStudents,
+            totalAssignments,
+            totalSubmissions,
+            totalGrades,
+            averageScore,
+            completionRate,
+            onTimeSubmissionRate: onTimeRate,
+            utilizationRate: lab.capacity > 0 ? Math.round((totalStudents / lab.capacity) * 100) : 0
+          }
+        };
+      }));
+      
+      // Calculate system-wide metrics
+      const systemMetrics = {
+        totalLabs: labs.length,
+        totalClasses: comparison.reduce((sum, lab) => sum + lab.metrics.totalClasses, 0),
+        totalStudents: comparison.reduce((sum, lab) => sum + lab.metrics.totalStudents, 0),
+        totalAssignments: comparison.reduce((sum, lab) => sum + lab.metrics.totalAssignments, 0),
+        totalSubmissions: comparison.reduce((sum, lab) => sum + lab.metrics.totalSubmissions, 0),
+        systemAverageScore: comparison.length > 0 ? 
+          Math.round(comparison.reduce((sum, lab) => sum + lab.metrics.averageScore, 0) / comparison.length * 10) / 10 : 0,
+        systemCompletionRate: comparison.length > 0 ? 
+          Math.round(comparison.reduce((sum, lab) => sum + lab.metrics.completionRate, 0) / comparison.length) : 0,
+        systemUtilizationRate: comparison.length > 0 ? 
+          Math.round(comparison.reduce((sum, lab) => sum + lab.metrics.utilizationRate, 0) / comparison.length) : 0
+      };
+      
+      res.json({
+        filters: { semester, year },
+        systemMetrics,
+        labComparison: comparison.sort((a, b) => b.metrics.averageScore - a.metrics.averageScore),
+        topPerformingLab: comparison.reduce((top, current) => 
+          current.metrics.averageScore > top.metrics.averageScore ? current : top, comparison[0] || null),
+        mostUtilizedLab: comparison.reduce((top, current) => 
+          current.metrics.utilizationRate > top.metrics.utilizationRate ? current : top, comparison[0] || null)
+      });
+    } catch (error: any) {
+      console.error('Error generating multi-lab comparison:', error);
+      res.status(500).json({ error: 'Failed to generate multi-lab comparison' });
+    }
+  });
+
   // Users (General)
   app.get('/api/users/:id', async (req, res) => {
     try {
