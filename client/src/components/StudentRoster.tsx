@@ -74,6 +74,20 @@ const addStudentSchema = z.object({
   lastName: z.string().min(1, "Last name is required"),
   email: z.string().email("Please enter a valid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
+  gradeLevel: z.number().int().min(11).max(12),
+  tradeType: z.enum(["NM", "M", "C"]),
+  section: z.string().regex(/^[A-J]$/, "Section must be A through J"),
+}).refine((data) => {
+  // Section validation based on trade type
+  if (data.tradeType === "NM") {
+    return /^[A-F]$/.test(data.section);
+  } else if (data.tradeType === "M" || data.tradeType === "C") {
+    return /^[A-B]$/.test(data.section);
+  }
+  return true;
+}, {
+  message: "Section must be A-F for Non Medical (NM), A-B for Medical (M) or Commerce (C)",
+  path: ["section"]
 });
 
 const enrollStudentSchema = z.object({
@@ -98,13 +112,13 @@ export function StudentRoster() {
   const { toast } = useToast();
 
   // Fetch all students with role 'student'
-  const { data: students = [], isLoading: studentsLoading, error: studentsError } = useQuery({
+  const { data: students = [], isLoading: studentsLoading, error: studentsError } = useQuery<User[]>({
     queryKey: ['/api/students'],
-    select: (data) => data?.filter((user: User) => user.role === 'student') || []
+    select: (data: User[]) => data?.filter((user: User) => user.role === 'student') || []
   });
 
   // Fetch all enrollments with detailed information
-  const { data: enrollments = [], isLoading: enrollmentsLoading, error: enrollmentsError } = useQuery({
+  const { data: enrollments = [], isLoading: enrollmentsLoading, error: enrollmentsError } = useQuery<EnrollmentWithDetails[]>({
     queryKey: ['/api/enrollments/details']
   });
 
@@ -161,7 +175,7 @@ export function StudentRoster() {
     if (selectedStudents.length === filteredEnrollments.length) {
       setSelectedStudents([]);
     } else {
-      setSelectedStudents(filteredEnrollments.map(e => e.student!.id));
+      setSelectedStudents(filteredEnrollments.map((e: EnrollmentWithDetails) => e.student!.id));
     }
   };
 
@@ -173,6 +187,9 @@ export function StudentRoster() {
       lastName: "",
       email: "",
       password: "",
+      gradeLevel: 11,
+      tradeType: "NM",
+      section: "A",
     }
   });
 
@@ -335,6 +352,82 @@ export function StudentRoster() {
                     </FormItem>
                   )}
                 />
+                
+                {/* Student Classification Fields */}
+                <div className="grid grid-cols-3 gap-4">
+                  <FormField
+                    control={addStudentForm.control}
+                    name="gradeLevel"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Grade Level</FormLabel>
+                        <Select onValueChange={(value) => field.onChange(parseInt(value))} defaultValue={field.value?.toString()}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-grade-level">
+                              <SelectValue placeholder="Select Grade" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="11">11</SelectItem>
+                            <SelectItem value="12">12</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={addStudentForm.control}
+                    name="tradeType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Trade Type</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-trade-type">
+                              <SelectValue placeholder="Select Trade" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="NM">Non Medical</SelectItem>
+                            <SelectItem value="M">Medical</SelectItem>
+                            <SelectItem value="C">Commerce</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={addStudentForm.control}
+                    name="section"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Section</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-section">
+                              <SelectValue placeholder="Select Section" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="A">A</SelectItem>
+                            <SelectItem value="B">B</SelectItem>
+                            <SelectItem value="C">C</SelectItem>
+                            <SelectItem value="D">D</SelectItem>
+                            <SelectItem value="E">E</SelectItem>
+                            <SelectItem value="F">F</SelectItem>
+                            <SelectItem value="G">G</SelectItem>
+                            <SelectItem value="H">H</SelectItem>
+                            <SelectItem value="I">I</SelectItem>
+                            <SelectItem value="J">J</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
                 <DialogFooter>
                   <Button
                     type="button"
@@ -556,10 +649,10 @@ export function StudentRoster() {
                     <div className="flex items-center gap-4">
                       <div className="text-right">
                         <div className="text-sm font-medium">
-                          {enrollment.completedSessions || 0}/{enrollment.totalSessions || 0} Sessions
+                          {(enrollment as any).completedSessions || 0}/{(enrollment as any).totalSessions || 0} Sessions
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {enrollment.totalSessions ? Math.round(((enrollment.completedSessions || 0) / enrollment.totalSessions) * 100) : 0}% complete
+                          {(enrollment as any).totalSessions ? Math.round((((enrollment as any).completedSessions || 0) / (enrollment as any).totalSessions) * 100) : 0}% complete
                         </div>
                       </div>
                       <Badge 

@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { insertUserSchema } from "@shared/schema";
+import { baseUserSchema } from "@shared/schema";
 import { z } from "zod";
 import { Loader2, BookOpen, Users, Calendar } from "lucide-react";
 
@@ -20,7 +20,7 @@ const loginSchema = z.object({
 });
 
 // Registration form schema - extends the base schema
-const registerSchema = insertUserSchema.extend({
+const registerSchema = baseUserSchema.extend({
   confirmPassword: z.string().min(1, "Please confirm your password")
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",

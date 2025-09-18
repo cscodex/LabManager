@@ -13,7 +13,7 @@ export const users = pgTable("users", {
   lastName: text("last_name").notNull(),
   // Student-specific fields
   gradeLevel: integer("grade_level"), // 11 or 12 (nullable for instructors)
-  tradeType: text("trade_type"), // "Non Medical", "Commerce", "Medical" (nullable for instructors) 
+  tradeType: text("trade_type"), // "NM" (Non Medical), "M" (Medical), "C" (Commerce) - matches classes table
   section: text("section"), // "A" to "J" (nullable for instructors)
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -158,8 +158,8 @@ export const grades = pgTable("grades", {
 }));
 
 // Zod schemas for validation
-// Security: Remove role from client-controlled schema to prevent privilege escalation
-export const insertUserSchema = createInsertSchema(users).pick({
+// Base user schema without refinements (for extending in other places)
+export const baseUserSchema = createInsertSchema(users).pick({
   email: true,
   password: true,
   firstName: true,
@@ -168,10 +168,36 @@ export const insertUserSchema = createInsertSchema(users).pick({
   tradeType: true,
   section: true,
 }).extend({
-  // Validation for student fields
+  // Validation for student fields - aligned with classes table
   gradeLevel: z.number().int().min(11).max(12).optional(),
-  tradeType: z.enum(["Non Medical", "Commerce", "Medical"]).optional(),
+  tradeType: z.enum(["NM", "M", "C"]).optional(),
   section: z.string().regex(/^[A-J]$/, "Section must be A through J").optional(),
+});
+
+// Security: Remove role from client-controlled schema to prevent privilege escalation
+export const insertUserSchema = baseUserSchema.refine((data) => {
+  // If any student field is provided, all must be provided
+  const hasStudentFields = data.gradeLevel || data.tradeType || data.section;
+  if (hasStudentFields) {
+    return data.gradeLevel && data.tradeType && data.section;
+  }
+  return true;
+}, {
+  message: "Grade level, trade type, and section must all be provided together",
+  path: ["gradeLevel"]
+}).refine((data) => {
+  // Section validation based on trade type (matches classes table rules)
+  if (data.tradeType && data.section) {
+    if (data.tradeType === "NM") {
+      return /^[A-F]$/.test(data.section);
+    } else if (data.tradeType === "M" || data.tradeType === "C") {
+      return /^[A-B]$/.test(data.section);
+    }
+  }
+  return true;
+}, {
+  message: "Section must be A-F for Non Medical (NM), A-B for Medical (M) or Commerce (C)",
+  path: ["section"]
 });
 
 // Server-only schema that includes role (for admin operations)
@@ -185,10 +211,36 @@ export const insertUserWithRoleSchema = createInsertSchema(users).pick({
   tradeType: true,
   section: true,
 }).extend({
-  // Validation for student fields
+  // Validation for student fields - aligned with classes table
   gradeLevel: z.number().int().min(11).max(12).optional(),
-  tradeType: z.enum(["Non Medical", "Commerce", "Medical"]).optional(),
+  tradeType: z.enum(["NM", "M", "C"]).optional(),
   section: z.string().regex(/^[A-J]$/, "Section must be A through J").optional(),
+}).refine((data) => {
+  // For students, require all student fields
+  if (data.role === "student") {
+    return data.gradeLevel && data.tradeType && data.section;
+  }
+  // For instructors, student fields should be null
+  if (data.role === "instructor") {
+    return !data.gradeLevel && !data.tradeType && !data.section;
+  }
+  return true;
+}, {
+  message: "Students must have grade level, trade type, and section. Instructors should not have these fields.",
+  path: ["role"]
+}).refine((data) => {
+  // Section validation based on trade type (matches classes table rules)
+  if (data.tradeType && data.section) {
+    if (data.tradeType === "NM") {
+      return /^[A-F]$/.test(data.section);
+    } else if (data.tradeType === "M" || data.tradeType === "C") {
+      return /^[A-B]$/.test(data.section);
+    }
+  }
+  return true;
+}, {
+  message: "Section must be A-F for Non Medical (NM), A-B for Medical (M) or Commerce (C)",
+  path: ["section"]
 });
 
 export const insertLabSchema = createInsertSchema(labs).pick({
