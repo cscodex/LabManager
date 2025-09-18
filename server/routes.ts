@@ -402,6 +402,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk import students
+  app.post('/api/students/bulk-import', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      const { students } = req.body;
+      
+      if (!Array.isArray(students) || students.length === 0) {
+        return res.status(400).json({ error: 'Invalid request', message: 'Students array is required and must not be empty' });
+      }
+
+      const results: {
+        imported: number;
+        errors: string[];
+      } = {
+        imported: 0,
+        errors: []
+      };
+
+      for (let i = 0; i < students.length; i++) {
+        try {
+          // Validate each student data - add default password if not provided
+          const studentData = {
+            ...students[i],
+            role: 'student',
+            password: students[i].password || 'student123' // Default password for CSV imports
+          };
+          
+          const validatedData = insertUserWithRoleSchema.parse(studentData);
+          
+          // Create the student
+          await storage.createUser(validatedData);
+          results.imported++;
+        } catch (error: any) {
+          if (error.name === 'ZodError') {
+            results.errors.push(`Student ${i + 1}: ${error.errors.map((e: any) => e.message).join(', ')}`);
+          } else if (error.constraint && error.constraint.includes('unique')) {
+            results.errors.push(`Student ${i + 1}: Email already exists`);
+          } else {
+            results.errors.push(`Student ${i + 1}: ${error.message || 'Unknown error'}`);
+          }
+        }
+      }
+
+      if (results.errors.length > 0) {
+        return res.status(207).json({
+          message: `Partial success: ${results.imported} students imported, ${results.errors.length} failed`,
+          imported: results.imported,
+          errors: results.errors
+        });
+      }
+
+      res.status(201).json({
+        message: `Successfully imported ${results.imported} students`,
+        imported: results.imported
+      });
+    } catch (error: any) {
+      console.error('Error bulk importing students:', error);
+      res.status(500).json({ error: 'Failed to import students', message: error.message });
+    }
+  });
+
   // Enrollments with detailed information
   app.get('/api/enrollments/details', requireAuth, async (req, res) => {
     try {

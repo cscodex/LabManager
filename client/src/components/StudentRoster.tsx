@@ -9,7 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
-import { Plus, Search, Mail, MoreVertical, AlertCircle, Edit, Trash2, UserPlus, Filter, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Search, Mail, MoreVertical, AlertCircle, Edit, Trash2, UserPlus, Filter, ChevronLeft, ChevronRight, Upload, Download } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -107,6 +107,9 @@ export function StudentRoster() {
   const [showEnrollDialog, setShowEnrollDialog] = useState(false);
   const [selectedStudentForEnroll, setSelectedStudentForEnroll] = useState<string | null>(null);
   const [selectedTradeType, setSelectedTradeType] = useState<string>("NM");
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -290,6 +293,48 @@ export function StudentRoster() {
     },
   });
 
+  const importStudentsMutation = useMutation({
+    mutationFn: async (studentsData: AddStudentFormData[]) => {
+      const response = await apiRequest("POST", "/api/students/bulk-import", { students: studentsData });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Import failed');
+      }
+      return await response.json();
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/students'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/enrollments/details'] });
+      
+      // Handle partial success (when there are errors)
+      if (result.errors && result.errors.length > 0) {
+        setImportErrors(result.errors);
+        toast({ 
+          title: "Partial Import Success",
+          description: `${result.imported || 0} students imported, ${result.errors.length} failed. Check errors below.`,
+          variant: "destructive"
+        });
+        // Don't close dialog so user can see errors
+      } else {
+        // Complete success
+        toast({ 
+          title: "Import Successful",
+          description: `${result.imported || 0} students imported successfully`
+        });
+        setShowImportDialog(false);
+        setImportFile(null);
+        setImportErrors([]);
+      }
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Import Failed", 
+        description: error.message || "Failed to import students", 
+        variant: "destructive" 
+      });
+    },
+  });
+
   const handleAddStudent = (data: AddStudentFormData) => {
     addStudentMutation.mutate(data);
   };
@@ -313,6 +358,99 @@ export function StudentRoster() {
     setShowEnrollDialog(true);
   };
 
+  const parseCSVFile = (file: File): Promise<AddStudentFormData[]> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const csv = e.target?.result as string;
+          const lines = csv.split('\n').filter(line => line.trim());
+          
+          if (lines.length < 2) {
+            reject(new Error('CSV must have at least a header row and one data row'));
+            return;
+          }
+
+          // Expected headers: firstName,lastName,email,gradeLevel,tradeType,section
+          const headers = lines[0].split(',').map(h => h.trim());
+          const expectedHeaders = ['firstName', 'lastName', 'email', 'gradeLevel', 'tradeType', 'section'];
+          
+          const missingHeaders = expectedHeaders.filter(h => !headers.includes(h));
+          if (missingHeaders.length > 0) {
+            reject(new Error(`Missing required headers: ${missingHeaders.join(', ')}`));
+            return;
+          }
+
+          const students: AddStudentFormData[] = [];
+          const errors: string[] = [];
+
+          for (let i = 1; i < lines.length; i++) {
+            const values = lines[i].split(',').map(v => v.trim());
+            const rowData: Record<string, any> = {};
+            
+            headers.forEach((header, index) => {
+              rowData[header] = values[index] || '';
+            });
+
+            try {
+              // Parse and validate each student
+              const studentData = {
+                firstName: rowData.firstName,
+                lastName: rowData.lastName,
+                email: rowData.email,
+                gradeLevel: parseInt(rowData.gradeLevel),
+                tradeType: rowData.tradeType,
+                section: rowData.section,
+                role: 'student' as const,
+                password: 'defaultPassword123' // Will be changed on first login
+              };
+
+              // Validate against schema
+              const result = addStudentSchema.safeParse(studentData);
+              if (!result.success) {
+                errors.push(`Row ${i + 1}: ${result.error.issues.map(issue => issue.message).join(', ')}`);
+              } else {
+                students.push(result.data);
+              }
+            } catch (error) {
+              errors.push(`Row ${i + 1}: Invalid data format`);
+            }
+          }
+
+          if (errors.length > 0) {
+            setImportErrors(errors);
+            reject(new Error(`Validation errors found. Check the error list.`));
+          } else {
+            resolve(students);
+          }
+        } catch (error) {
+          reject(new Error('Failed to parse CSV file. Please check the format.'));
+        }
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsText(file);
+    });
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setImportFile(file);
+      setImportErrors([]);
+    }
+  };
+
+  const handleImportSubmit = async () => {
+    if (!importFile) return;
+    
+    try {
+      const students = await parseCSVFile(importFile);
+      importStudentsMutation.mutate(students);
+    } catch (error) {
+      // Errors are already set in parseCSVFile
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -321,31 +459,59 @@ export function StudentRoster() {
           <h2 className="text-2xl font-semibold text-foreground">Student Roster</h2>
           <p className="text-muted-foreground">Manage student enrollments and track progress</p>
         </div>
-        <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-add-student">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Student
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>Add New Student</DialogTitle>
-              <DialogDescription>
-                Create a new student account. Students can be enrolled in classes after creation.
-              </DialogDescription>
-            </DialogHeader>
-            <Form {...addStudentForm}>
-              <form onSubmit={addStudentForm.handleSubmit(handleAddStudent)} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+        <div className="flex gap-2">
+          <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-add-student">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Student
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Add New Student</DialogTitle>
+                <DialogDescription>
+                  Create a new student account. Students can be enrolled in classes after creation.
+                </DialogDescription>
+              </DialogHeader>
+              <Form {...addStudentForm}>
+                <form onSubmit={addStudentForm.handleSubmit(handleAddStudent)} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={addStudentForm.control}
+                      name="firstName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>First Name</FormLabel>
+                          <FormControl>
+                            <Input {...field} data-testid="input-first-name" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={addStudentForm.control}
+                      name="lastName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Last Name</FormLabel>
+                          <FormControl>
+                            <Input {...field} data-testid="input-last-name" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                   <FormField
                     control={addStudentForm.control}
-                    name="firstName"
+                    name="email"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>First Name</FormLabel>
+                        <FormLabel>Email</FormLabel>
                         <FormControl>
-                          <Input {...field} data-testid="input-first-name" />
+                          <Input {...field} type="email" data-testid="input-email" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -353,18 +519,156 @@ export function StudentRoster() {
                   />
                   <FormField
                     control={addStudentForm.control}
-                    name="lastName"
+                    name="password"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Last Name</FormLabel>
+                        <FormLabel>Password</FormLabel>
                         <FormControl>
-                          <Input {...field} data-testid="input-last-name" />
+                          <Input {...field} type="password" data-testid="input-password" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <FormField
+                      control={addStudentForm.control}
+                      name="gradeLevel"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Grade</FormLabel>
+                          <Select 
+                            onValueChange={(value) => field.onChange(parseInt(value))} 
+                            value={field.value?.toString()}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-grade">
+                                <SelectValue placeholder="Select" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="11">Grade 11</SelectItem>
+                              <SelectItem value="12">Grade 12</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={addStudentForm.control}
+                      name="tradeType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Trade</FormLabel>
+                          <Select 
+                            onValueChange={(value) => {
+                              field.onChange(value);
+                              setSelectedTradeType(value);
+                              // Reset section when trade changes
+                              addStudentForm.setValue("section", "");
+                            }}
+                            value={field.value}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-trade">
+                                <SelectValue placeholder="Select" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="NM">Non Medical</SelectItem>
+                              <SelectItem value="M">Medical</SelectItem>
+                              <SelectItem value="C">Commerce</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={addStudentForm.control}
+                      name="section"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Section</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-section">
+                                <SelectValue placeholder="Select" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {selectedTradeType === "NM" && (
+                                <>
+                                  <SelectItem value="A">Section A</SelectItem>
+                                  <SelectItem value="B">Section B</SelectItem>
+                                  <SelectItem value="C">Section C</SelectItem>
+                                  <SelectItem value="D">Section D</SelectItem>
+                                  <SelectItem value="E">Section E</SelectItem>
+                                  <SelectItem value="F">Section F</SelectItem>
+                                </>
+                              )}
+                              {(selectedTradeType === "M" || selectedTradeType === "C") && (
+                                <>
+                                  <SelectItem value="A">Section A</SelectItem>
+                                  <SelectItem value="B">Section B</SelectItem>
+                                </>
+                              )}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <DialogFooter>
+                    <Button 
+                      type="submit" 
+                      disabled={addStudentMutation.isPending}
+                      data-testid="button-submit-student"
+                    >
+                      {addStudentMutation.isPending ? "Adding..." : "Add Student"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+          <Button 
+            variant="outline"
+            onClick={() => setShowImportDialog(true)}
+            data-testid="button-import-students"
+          >
+            <Upload className="h-4 w-4 mr-2" />
+            Import CSV
+          </Button>
+        </div>
+      </div>
+      
+      {/* Search and Filters */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by name, email, ID, lab, class, or group..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                  data-testid="input-search"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" data-testid="button-export">
+                  Export
+                </Button>
+                <Button variant="outline" size="sm" data-testid="button-import">
+                  Import
+                </Button>
+              </div>
+            </div>
                 <FormField
                   control={addStudentForm.control}
                   name="email"
@@ -976,6 +1280,79 @@ export function StudentRoster() {
               </DialogFooter>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Students Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Import Students from CSV</DialogTitle>
+            <DialogDescription>
+              Upload a CSV file with student data. Expected columns: firstName, lastName, email, gradeLevel, tradeType, section
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="csv-file" className="block text-sm font-medium mb-2">
+                Select CSV File
+              </label>
+              <input
+                id="csv-file"
+                type="file"
+                accept=".csv"
+                onChange={handleFileChange}
+                data-testid="input-csv-file"
+                className="w-full p-2 border border-input rounded-md"
+              />
+            </div>
+            
+            {importFile && (
+              <div className="text-sm text-muted-foreground">
+                Selected: {importFile.name}
+              </div>
+            )}
+            
+            {importErrors.length > 0 && (
+              <div className="max-h-32 overflow-y-auto border border-destructive/30 rounded-md p-3">
+                <h4 className="text-sm font-medium text-destructive mb-2">Import Errors:</h4>
+                <ul className="text-sm space-y-1">
+                  {importErrors.map((error, index) => (
+                    <li key={index} className="text-destructive">{error}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
+            <div className="text-sm text-muted-foreground">
+              <p><strong>CSV Format:</strong></p>
+              <p>firstName,lastName,email,gradeLevel,tradeType,section</p>
+              <p><strong>Example:</strong></p>
+              <p>John,Smith,john.smith@example.com,11,NM,A</p>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowImportDialog(false);
+                setImportFile(null);
+                setImportErrors([]);
+              }}
+              data-testid="button-cancel-import"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleImportSubmit}
+              disabled={!importFile || importStudentsMutation.isPending}
+              data-testid="button-submit-import"
+            >
+              {importStudentsMutation.isPending ? "Importing..." : "Import Students"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
