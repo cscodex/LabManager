@@ -669,144 +669,95 @@ export function StudentRoster() {
                 </Button>
               </div>
             </div>
-                <FormField
-                  control={addStudentForm.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <Input {...field} type="email" data-testid="input-email" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={addStudentForm.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Password</FormLabel>
-                      <FormControl>
-                        <Input {...field} type="password" data-testid="input-password" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                
-                {/* Student Classification Fields */}
-                <div className="grid grid-cols-3 gap-4">
-                  <FormField
-                    control={addStudentForm.control}
-                    name="gradeLevel"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Grade Level</FormLabel>
-                        <Select value={field.value?.toString()} onValueChange={(value) => field.onChange(parseInt(value))}>
-                          <FormControl>
-                            <SelectTrigger data-testid="select-grade-level">
-                              <SelectValue placeholder="Select Grade" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="11" data-testid="option-grade-11">11</SelectItem>
-                            <SelectItem value="12" data-testid="option-grade-12">12</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={addStudentForm.control}
-                    name="tradeType"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Trade Type</FormLabel>
-                        <Select 
-                          value={field.value} 
-                          onValueChange={(value) => {
-                            field.onChange(value);
-                            setSelectedTradeType(value);
-                            // Reset section when trade type changes
-                            addStudentForm.setValue("section", "A");
-                          }}
-                        >
-                          <FormControl>
-                            <SelectTrigger data-testid="select-trade-type">
-                              <SelectValue placeholder="Select Trade" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="NM" data-testid="option-trade-NM">Non Medical</SelectItem>
-                            <SelectItem value="M" data-testid="option-trade-M">Medical</SelectItem>
-                            <SelectItem value="C" data-testid="option-trade-C">Commerce</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={addStudentForm.control}
-                    name="section"
-                    render={({ field }) => {
-                      // Dynamic section options based on trade type
-                      const availableSections = selectedTradeType === "NM" 
-                        ? ["A", "B", "C", "D", "E", "F"]
-                        : ["A", "B"]; // M and C only have A-B
-                      
-                      return (
-                        <FormItem>
-                          <FormLabel>Section</FormLabel>
-                          <Select value={field.value} onValueChange={field.onChange}>
-                            <FormControl>
-                              <SelectTrigger data-testid="select-section">
-                                <SelectValue placeholder="Select Section" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {availableSections.map((section) => (
-                                <SelectItem 
-                                  key={section} 
-                                  value={section} 
-                                  data-testid={`option-section-${section}`}
-                                >
-                                  {section}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      );
-                    }}
-                  />
-                </div>
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setShowAddDialog(false)}
-                    data-testid="button-cancel"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={addStudentMutation.isPending}
-                    data-testid="button-add-student-submit"
-                  >
-                    {addStudentMutation.isPending ? "Adding..." : "Add Student"}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </Form>
-          </DialogContent>
-        </Dialog>
-      </div>
+            
+            {/* Primary Filters */}
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1">
+                <Select value={filterClass} onValueChange={(value) => { setFilterClass(value); resetPagination(); }}>
+                  <SelectTrigger data-testid="select-filter-class">
+                    <SelectValue placeholder="Filter by Class" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Classes</SelectItem>
+                    {classes.map((classItem) => (
+                      <SelectItem key={classItem.id} value={classItem.id}>
+                        {classItem.displayName} - {classItem.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="flex-1">
+                <Select value={filterLab} onValueChange={(value) => { setFilterLab(value); resetPagination(); }}>
+                  <SelectTrigger data-testid="select-filter-lab">
+                    <SelectValue placeholder="Filter by Lab" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Labs</SelectItem>
+                    {labs.map((lab) => (
+                      <SelectItem key={lab.id} value={lab.id}>
+                        {lab.displayName} - {lab.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
+            {/* Secondary Filters */}
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1">
+                <Select value={filterGrade} onValueChange={(value) => { setFilterGrade(value); resetPagination(); }}>
+                  <SelectTrigger data-testid="select-filter-grade">
+                    <SelectValue placeholder="Filter by Grade" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Grades</SelectItem>
+                    <SelectItem value="11">Grade 11</SelectItem>
+                    <SelectItem value="12">Grade 12</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="flex-1">
+                <Select value={filterTrade} onValueChange={(value) => { setFilterTrade(value); resetPagination(); }}>
+                  <SelectTrigger data-testid="select-filter-trade">
+                    <SelectValue placeholder="Filter by Trade" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Trades</SelectItem>
+                    <SelectItem value="NM">Non Medical</SelectItem>
+                    <SelectItem value="M">Medical</SelectItem>
+                    <SelectItem value="C">Commerce</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="flex-1">
+                <Select value={filterSection} onValueChange={(value) => { setFilterSection(value); resetPagination(); }}>
+                  <SelectTrigger data-testid="select-filter-section">
+                    <SelectValue placeholder="Filter by Section" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Sections</SelectItem>
+                    <SelectItem value="A">Section A</SelectItem>
+                    <SelectItem value="B">Section B</SelectItem>
+                    <SelectItem value="C">Section C</SelectItem>
+                    <SelectItem value="D">Section D</SelectItem>
+                    <SelectItem value="E">Section E</SelectItem>
+                    <SelectItem value="F">Section F</SelectItem>
+                    <SelectItem value="G">Section G</SelectItem>
+                    <SelectItem value="H">Section H</SelectItem>
+                    <SelectItem value="I">Section I</SelectItem>
+                    <SelectItem value="J">Section J</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Search and Filters */}
       <Card>
