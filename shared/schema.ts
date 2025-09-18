@@ -24,12 +24,15 @@ export const labs = pgTable("labs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Classes table
+// Classes table with enhanced class-trade-section system
 export const classes = pgTable("classes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   code: text("code").notNull(),
-  section: text("section").notNull(),
+  gradeLevel: integer("grade_level").notNull(), // 11 or 12
+  tradeType: text("trade_type").notNull(), // "NM" (Non Medical), "M" (Medical), "C" (Commerce)
+  section: text("section").notNull(), // "A", "B", "C", etc.
+  displayName: text("display_name").notNull(), // "11 NM A", "12 M B", etc.
   labId: varchar("lab_id").references(() => labs.id).notNull(),
   instructorId: varchar("instructor_id").references(() => users.id).notNull(),
   semester: text("semester").notNull(),
@@ -37,8 +40,8 @@ export const classes = pgTable("classes", {
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
-  // Unique constraint: one class per code, section, semester, and year
-  uniqueClass: unique().on(table.code, table.section, table.semester, table.year),
+  // Unique constraint: one class per grade, trade, section, semester, and year
+  uniqueClass: unique().on(table.gradeLevel, table.tradeType, table.section, table.semester, table.year),
 }));
 
 // Computers table
@@ -81,12 +84,28 @@ export const enrollments = pgTable("enrollments", {
   uniqueEnrollment: unique().on(table.studentId, table.classId),
 }));
 
+// Weekly timetable structure
+export const timetables = pgTable("timetables", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  classId: varchar("class_id").references(() => classes.id).notNull(),
+  dayOfWeek: integer("day_of_week").notNull(), // 1=Monday, 2=Tuesday, ..., 7=Sunday
+  startTime: text("start_time").notNull(), // "09:00", "10:30", etc.
+  endTime: text("end_time").notNull(), // "10:30", "12:00", etc.
+  labId: varchar("lab_id").references(() => labs.id).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  // Unique constraint: one timetable slot per class per day and time
+  uniqueTimetableSlot: unique().on(table.classId, table.dayOfWeek, table.startTime),
+}));
+
 // Lab sessions
 export const sessions = pgTable("sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   title: text("title").notNull(),
   description: text("description"),
   classId: varchar("class_id").references(() => classes.id).notNull(),
+  timetableId: varchar("timetable_id").references(() => timetables.id), // Optional: link to recurring timetable
   scheduledAt: timestamp("scheduled_at").notNull(),
   duration: integer("duration").notNull(), // minutes
   isActive: boolean("is_active").default(true).notNull(),
@@ -162,11 +181,53 @@ export const insertLabSchema = createInsertSchema(labs).pick({
 export const insertClassSchema = createInsertSchema(classes).pick({
   name: true,
   code: true,
+  gradeLevel: true,
+  tradeType: true,
   section: true,
   labId: true,
   instructorId: true,
   semester: true,
   year: true,
+}).extend({
+  // Validation for grade levels
+  gradeLevel: z.number().int().min(11).max(12),
+  // Validation for trade types
+  tradeType: z.enum(["NM", "M", "C"]),
+  // Section validation based on trade type
+  section: z.string(),
+}).refine((data) => {
+  // Dynamic section validation based on trade type
+  if (data.tradeType === "NM") {
+    return /^[A-F]$/.test(data.section);
+  } else if (data.tradeType === "M" || data.tradeType === "C") {
+    return /^[A-B]$/.test(data.section);
+  }
+  return false;
+}, {
+  message: "Section must be A-F for Non Medical, A-B for Medical/Commerce",
+  path: ["section"]
+});
+
+export const insertTimetableSchema = createInsertSchema(timetables).pick({
+  classId: true,
+  dayOfWeek: true,
+  startTime: true,
+  endTime: true,
+  labId: true,
+}).extend({
+  dayOfWeek: z.number().int().min(1).max(7),
+  startTime: z.string().regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, "Time must be in HH:MM format"),
+  endTime: z.string().regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, "Time must be in HH:MM format"),
+}).refine((data) => {
+  // Ensure endTime is after startTime
+  const timeToMinutes = (time: string) => {
+    const [hours, minutes] = time.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+  return timeToMinutes(data.endTime) > timeToMinutes(data.startTime);
+}, {
+  message: "End time must be after start time",
+  path: ["endTime"]
 });
 
 export const insertComputerSchema = createInsertSchema(computers).pick({
@@ -193,6 +254,7 @@ export const insertSessionSchema = createInsertSchema(sessions).pick({
   title: true,
   description: true,
   classId: true,
+  timetableId: true,
   scheduledAt: true,
   duration: true,
 });
@@ -232,6 +294,9 @@ export type Lab = typeof labs.$inferSelect;
 
 export type InsertClass = z.infer<typeof insertClassSchema>;
 export type Class = typeof classes.$inferSelect;
+
+export type InsertTimetable = z.infer<typeof insertTimetableSchema>;
+export type Timetable = typeof timetables.$inferSelect;
 
 export type InsertComputer = z.infer<typeof insertComputerSchema>;
 export type Computer = typeof computers.$inferSelect;

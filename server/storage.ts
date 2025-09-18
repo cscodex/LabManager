@@ -8,7 +8,7 @@ import type {
   Computer, InsertComputer, Group, InsertGroup, 
   Enrollment, InsertEnrollment, Session, InsertSession,
   Assignment, InsertAssignment, Submission, InsertSubmission,
-  Grade, InsertGrade
+  Grade, InsertGrade, Timetable, InsertTimetable
 } from "@shared/schema";
 
 // Use Node Postgres driver for reliable database connection in Replit
@@ -36,14 +36,26 @@ export interface IStorage {
   updateLab(id: string, lab: Partial<InsertLab>): Promise<Lab | undefined>;
   deleteLab(id: string): Promise<boolean>;
   
-  // Classes
+  // Classes with trade-section system
   getClasses(): Promise<Class[]>;
   getClassesByLab(labId: string): Promise<Class[]>;
   getClassesByInstructor(instructorId: string): Promise<Class[]>;
+  getClassesByGradeAndTrade(gradeLevel: number, tradeType: string): Promise<Class[]>;
   getClass(id: string): Promise<Class | undefined>;
   createClass(classData: InsertClass): Promise<Class>;
   updateClass(id: string, classData: Partial<InsertClass>): Promise<Class | undefined>;
   deleteClass(id: string): Promise<boolean>;
+  
+  // Timetables
+  getTimetables(): Promise<Timetable[]>;
+  getTimetablesByClass(classId: string): Promise<Timetable[]>;
+  getTimetablesByLab(labId: string): Promise<Timetable[]>;
+  getTimetablesByDay(dayOfWeek: number): Promise<Timetable[]>;
+  getTimetable(id: string): Promise<Timetable | undefined>;
+  createTimetable(timetable: InsertTimetable): Promise<Timetable>;
+  updateTimetable(id: string, timetable: Partial<InsertTimetable>): Promise<Timetable | undefined>;
+  deleteTimetable(id: string): Promise<boolean>;
+  checkTimetableConflicts(labId: string, dayOfWeek: number, startTime: string, endTime: string, excludeTimetableId?: string): Promise<{ hasConflicts: boolean; conflictingTimetables: Timetable[] }>;
   
   // Computers
   getComputersByLab(labId: string): Promise<Computer[]>;
@@ -70,6 +82,7 @@ export interface IStorage {
   // Sessions
   getSessionsByClass(classId: string): Promise<Session[]>;
   getSessionsByLab(labId: string): Promise<Session[]>;
+  getSessionsByTimetable(timetableId: string): Promise<Session[]>;
   getSession(id: string): Promise<Session | undefined>;
   createSession(session: InsertSession): Promise<Session>;
   updateSession(id: string, session: Partial<InsertSession>): Promise<Session | undefined>;
@@ -226,6 +239,12 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  async getClassesByGradeAndTrade(gradeLevel: number, tradeType: string): Promise<Class[]> {
+    return await db.query.classes.findMany({
+      where: and(eq(schema.classes.gradeLevel, gradeLevel), eq(schema.classes.tradeType, tradeType)),
+    });
+  }
+
   async getClass(id: string): Promise<Class | undefined> {
     return await db.query.classes.findFirst({
       where: eq(schema.classes.id, id),
@@ -233,13 +252,36 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createClass(classData: InsertClass): Promise<Class> {
-    const result = await db.insert(schema.classes).values(classData).returning();
+    // Generate displayName server-side to ensure consistency
+    const tradeNames = { NM: "Non Medical", M: "Medical", C: "Commerce" };
+    const displayName = `${classData.gradeLevel} ${classData.tradeType} ${classData.section}`;
+    
+    const classWithDisplayName = {
+      ...classData,
+      displayName
+    };
+    
+    const result = await db.insert(schema.classes).values(classWithDisplayName).returning();
     return result[0];
   }
 
   async updateClass(id: string, classData: Partial<InsertClass>): Promise<Class | undefined> {
+    let updateData = { ...classData };
+    
+    // Regenerate displayName if any relevant fields are updated
+    if (classData.gradeLevel || classData.tradeType || classData.section) {
+      // Get current class data to fill in missing fields
+      const currentClass = await this.getClass(id);
+      if (currentClass) {
+        const gradeLevel = classData.gradeLevel ?? currentClass.gradeLevel;
+        const tradeType = classData.tradeType ?? currentClass.tradeType;
+        const section = classData.section ?? currentClass.section;
+        updateData.displayName = `${gradeLevel} ${tradeType} ${section}`;
+      }
+    }
+    
     const result = await db.update(schema.classes)
-      .set(classData)
+      .set(updateData)
       .where(eq(schema.classes.id, id))
       .returning();
     
@@ -252,6 +294,117 @@ export class DatabaseStorage implements IStorage {
       .returning();
     
     return result.length > 0;
+  }
+
+  // Timetables
+  async getTimetables(): Promise<Timetable[]> {
+    return await db.query.timetables.findMany();
+  }
+
+  async getTimetablesByClass(classId: string): Promise<Timetable[]> {
+    return await db.query.timetables.findMany({
+      where: eq(schema.timetables.classId, classId),
+    });
+  }
+
+  async getTimetablesByLab(labId: string): Promise<Timetable[]> {
+    return await db.query.timetables.findMany({
+      where: eq(schema.timetables.labId, labId),
+    });
+  }
+
+  async getTimetablesByDay(dayOfWeek: number): Promise<Timetable[]> {
+    return await db.query.timetables.findMany({
+      where: eq(schema.timetables.dayOfWeek, dayOfWeek),
+    });
+  }
+
+  async getTimetable(id: string): Promise<Timetable | undefined> {
+    return await db.query.timetables.findFirst({
+      where: eq(schema.timetables.id, id),
+    });
+  }
+
+  async createTimetable(timetable: InsertTimetable): Promise<Timetable> {
+    // Validate lab consistency: timetable.labId should match class.labId
+    const classData = await this.getClass(timetable.classId);
+    if (classData && classData.labId !== timetable.labId) {
+      throw new Error("Timetable lab must match the class's assigned lab");
+    }
+    
+    const result = await db.insert(schema.timetables).values(timetable).returning();
+    return result[0];
+  }
+
+  async updateTimetable(id: string, timetable: Partial<InsertTimetable>): Promise<Timetable | undefined> {
+    // Validate lab consistency if classId or labId is being updated
+    if (timetable.classId || timetable.labId) {
+      const currentTimetable = await this.getTimetable(id);
+      if (currentTimetable) {
+        const classId = timetable.classId ?? currentTimetable.classId;
+        const labId = timetable.labId ?? currentTimetable.labId;
+        
+        const classData = await this.getClass(classId);
+        if (classData && classData.labId !== labId) {
+          throw new Error("Timetable lab must match the class's assigned lab");
+        }
+      }
+    }
+    
+    const result = await db.update(schema.timetables)
+      .set(timetable)
+      .where(eq(schema.timetables.id, id))
+      .returning();
+    
+    return result[0];
+  }
+
+  async deleteTimetable(id: string): Promise<boolean> {
+    const result = await db.delete(schema.timetables)
+      .where(eq(schema.timetables.id, id))
+      .returning();
+    
+    return result.length > 0;
+  }
+
+  async checkTimetableConflicts(labId: string, dayOfWeek: number, startTime: string, endTime: string, excludeTimetableId?: string): Promise<{ hasConflicts: boolean; conflictingTimetables: Timetable[] }> {
+    const timetables = await db.query.timetables.findMany({
+      where: and(
+        eq(schema.timetables.labId, labId),
+        eq(schema.timetables.dayOfWeek, dayOfWeek),
+        eq(schema.timetables.isActive, true)
+      ),
+    });
+    
+    const conflictingTimetables = timetables.filter(timetable => {
+      // Skip the timetable being updated if excludeTimetableId is provided
+      if (excludeTimetableId && timetable.id === excludeTimetableId) {
+        return false;
+      }
+      
+      // Check for time overlap
+      const existingStart = timetable.startTime;
+      const existingEnd = timetable.endTime;
+      
+      // Convert times to minutes for easier comparison
+      const timeToMinutes = (time: string) => {
+        const [hours, minutes] = time.split(':').map(Number);
+        return hours * 60 + minutes;
+      };
+      
+      const newStart = timeToMinutes(startTime);
+      const newEnd = timeToMinutes(endTime);
+      const existStart = timeToMinutes(existingStart);
+      const existEnd = timeToMinutes(existingEnd);
+      
+      // Check for overlap
+      return newStart < existEnd && newEnd > existStart;
+    });
+    
+    return {
+      hasConflicts: conflictingTimetables.length > 0,
+      conflictingTimetables
+    };
   }
 
   // Computers
@@ -369,6 +522,12 @@ export class DatabaseStorage implements IStorage {
   async getSessionsByClass(classId: string): Promise<Session[]> {
     return await db.query.sessions.findMany({
       where: eq(schema.sessions.classId, classId),
+    });
+  }
+  
+  async getSessionsByTimetable(timetableId: string): Promise<Session[]> {
+    return await db.query.sessions.findMany({
+      where: eq(schema.sessions.timetableId, timetableId),
     });
   }
   
