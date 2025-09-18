@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar, Clock, Users, MapPin, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { type SelectTimetable, type SelectClass, type SelectLab } from "@shared/schema";
+import { type Timetable, type Class, type Lab } from "@shared/schema";
 
 // Helper function to format time range
 const formatTimeRange = (startTime: string, endTime: string) => {
@@ -20,13 +20,13 @@ const getDateForDayOfWeek = (weekStart: Date, dayOfWeek: number) => {
 };
 
 // Helper function to generate class display name
-const getClassDisplayName = (classData: SelectClass) => {
-  const tradeTypeMap = {
-    'non_medical': 'NM',
-    'medical': 'M', 
-    'commerce': 'C'
+const getClassDisplayName = (classData: Class) => {
+  const tradeTypeMap: Record<string, string> = {
+    'NM': 'NM',
+    'M': 'M', 
+    'C': 'C'
   };
-  return `${classData.gradeLevel} ${tradeTypeMap[classData.tradeType]} ${classData.section}`;
+  return `${classData.gradeLevel} ${tradeTypeMap[classData.tradeType] || classData.tradeType} ${classData.section}`;
 };
 
 const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -38,12 +38,12 @@ export function LabScheduler() {
   const [selectedClass, setSelectedClass] = useState<string>('all');
 
   // Fetch classes for filtering
-  const { data: classes = [] } = useQuery<SelectClass[]>({
+  const { data: classes = [] } = useQuery<Class[]>({
     queryKey: ['/api/classes']
   });
 
   // Fetch labs for display
-  const { data: labs = [] } = useQuery<SelectLab[]>({
+  const { data: labs = [] } = useQuery<Lab[]>({
     queryKey: ['/api/labs']
   });
 
@@ -59,7 +59,7 @@ export function LabScheduler() {
   const selectedDay = selectedDate.getDay() || 7; // Convert Sunday (0) to 7
 
   // Fetch timetables for the selected week and class
-  const { data: timetables = [], isLoading } = useQuery<SelectTimetable[]>({
+  const { data: timetables = [], isLoading } = useQuery<Timetable[]>({
     queryKey: ['/api/timetables', ...(selectedClass && selectedClass !== 'all' ? [selectedClass] : [])]
   });
 
