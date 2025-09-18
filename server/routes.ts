@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, requireAuth, requireRole, bypassAuth } from "./auth";
+import { setupAuth, requireAuth, requireRole } from "./auth";
 import { 
   insertLabSchema, 
   insertUserSchema, 
@@ -69,7 +69,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
   
   // Labs Management
-  app.get('/api/labs', async (req, res) => {
+  app.get('/api/labs', requireAuth, async (req, res) => {
     try {
       const labs = await storage.getLabs();
       res.json(labs);
@@ -79,7 +79,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/labs/:id', async (req, res) => {
+  app.get('/api/labs/:id', requireAuth, async (req, res) => {
     try {
       const lab = await storage.getLab(req.params.id);
       if (!lab) {
@@ -92,7 +92,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/labs', async (req, res) => {
+  app.post('/api/labs', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const validatedData = insertLabSchema.parse(req.body);
       const lab = await storage.createLab(validatedData);
@@ -109,7 +109,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/labs/:id', async (req, res) => {
+  app.patch('/api/labs/:id', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const validatedData = insertLabSchema.partial().parse(req.body);
       const lab = await storage.updateLab(req.params.id, validatedData);
@@ -129,7 +129,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/labs/:id', async (req, res) => {
+  app.delete('/api/labs/:id', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const deleted = await storage.deleteLab(req.params.id);
       if (!deleted) {
@@ -146,7 +146,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Instructors Management (Users with instructor role)
-  app.get('/api/instructors', async (req, res) => {
+  app.get('/api/instructors', requireAuth, async (req, res) => {
     try {
       const instructors = await storage.getUsersByRole('instructor');
       // Remove passwords from response
@@ -158,31 +158,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // SECURITY: POST /api/instructors endpoint temporarily disabled
-  // This endpoint allows privilege escalation without proper authentication
-  // TODO: Re-enable when authentication system is implemented
-  /*
-  app.post('/api/instructors', async (req, res) => {
-    try {
-      const validatedData = insertUserSchema.parse(req.body);
-      // Create instructor with role
-      const instructor = await storage.createUserWithRole({
-        ...validatedData,
-        role: 'instructor'
-      });
-      
-      // Remove password from response
-      const { password, ...instructorResponse } = instructor;
-      res.status(201).json(instructorResponse);
-    } catch (error: any) {
-      console.error('Error creating instructor:', error);
-      res.status(400).json({ error: 'Invalid instructor data' });
-    }
-  });
-  */
 
   // Classes Management
-  app.get('/api/classes', async (req, res) => {
+  app.get('/api/classes', requireAuth, async (req, res) => {
     try {
       const { labId, instructorId, gradeLevel, tradeType } = req.query;
       
@@ -204,7 +182,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/classes/:id', async (req, res) => {
+  app.get('/api/classes/:id', requireAuth, async (req, res) => {
     try {
       const classData = await storage.getClass(req.params.id);
       if (!classData) {
@@ -217,7 +195,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/classes', async (req, res) => {
+  app.post('/api/classes', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const validatedData = insertClassSchema.parse(req.body);
       const classData = await storage.createClass(validatedData);
@@ -234,7 +212,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/classes/:id', async (req, res) => {
+  app.patch('/api/classes/:id', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       // For partial updates, we'll validate manually to avoid schema issues
       const validatedData = req.body;
@@ -256,7 +234,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/classes/:id', async (req, res) => {
+  app.delete('/api/classes/:id', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const deleted = await storage.deleteClass(req.params.id);
       if (!deleted) {
@@ -273,7 +251,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Computers Management
-  app.get('/api/labs/:labId/computers', async (req, res) => {
+  app.get('/api/labs/:labId/computers', requireAuth, async (req, res) => {
     try {
       const computers = await storage.getComputersByLab(req.params.labId);
       res.json(computers);
@@ -283,7 +261,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/computers', async (req, res) => {
+  app.post('/api/computers', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const validatedData = insertComputerSchema.parse(req.body);
       const computer = await storage.createComputer(validatedData);
@@ -300,7 +278,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/computers/:id', async (req, res) => {
+  app.patch('/api/computers/:id', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const validatedData = insertComputerSchema.partial().parse(req.body);
       const computer = await storage.updateComputer(req.params.id, validatedData);
@@ -320,7 +298,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/computers/:id', async (req, res) => {
+  app.delete('/api/computers/:id', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const deleted = await storage.deleteComputer(req.params.id);
       if (!deleted) {
@@ -337,7 +315,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Groups Management
-  app.get('/api/classes/:classId/groups', async (req, res) => {
+  app.get('/api/classes/:classId/groups', requireAuth, async (req, res) => {
     try {
       const groups = await storage.getGroupsByClass(req.params.classId);
       res.json(groups);
@@ -347,7 +325,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/groups', async (req, res) => {
+  app.post('/api/groups', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const validatedData = insertGroupSchema.parse(req.body);
       const group = await storage.createGroup(validatedData);
@@ -364,7 +342,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/groups/:id', async (req, res) => {
+  app.patch('/api/groups/:id', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const validatedData = insertGroupSchema.partial().parse(req.body);
       const group = await storage.updateGroup(req.params.id, validatedData);
@@ -384,7 +362,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/groups/:id', async (req, res) => {
+  app.delete('/api/groups/:id', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const deleted = await storage.deleteGroup(req.params.id);
       if (!deleted) {
@@ -401,7 +379,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Students Management - Get all students (instructors) or current student info (students)
-  app.get('/api/students', bypassAuth, requireAuth, async (req, res) => {
+  app.get('/api/students', requireAuth, async (req, res) => {
     try {
       const userRole = req.user?.role;
       
@@ -425,7 +403,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Enrollments with detailed information
-  app.get('/api/enrollments/details', bypassAuth, requireAuth, async (req, res) => {
+  app.get('/api/enrollments/details', requireAuth, async (req, res) => {
     try {
       const userRole = req.user?.role;
       const userId = req.user?.id;
@@ -574,7 +552,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Enrollments Management
-  app.get('/api/classes/:classId/enrollments', async (req, res) => {
+  app.get('/api/classes/:classId/enrollments', requireAuth, async (req, res) => {
     try {
       const enrollments = await storage.getEnrollmentsByClass(req.params.classId);
       res.json(enrollments);
@@ -584,7 +562,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/enrollments', async (req, res) => {
+  app.post('/api/enrollments', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const validatedData = insertEnrollmentSchema.parse(req.body);
       const enrollment = await storage.createEnrollment(validatedData);
@@ -601,7 +579,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/enrollments/:id', async (req, res) => {
+  app.patch('/api/enrollments/:id', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const validatedData = insertEnrollmentSchema.partial().parse(req.body);
       const enrollment = await storage.updateEnrollment(req.params.id, validatedData);
@@ -621,7 +599,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/enrollments/:id', async (req, res) => {
+  app.delete('/api/enrollments/:id', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const deleted = await storage.deleteEnrollment(req.params.id);
       if (!deleted) {
@@ -638,7 +616,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Smart enrollment with automatic group and seat assignment
-  app.post('/api/classes/:classId/enroll-student', async (req, res) => {
+  app.post('/api/classes/:classId/enroll-student', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const { studentId } = req.body;
       const classId = req.params.classId;
@@ -731,7 +709,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get enrollment details with group and computer info
-  app.get('/api/enrollments/:id/details', async (req, res) => {
+  app.get('/api/enrollments/:id/details', requireAuth, async (req, res) => {
     try {
       const enrollment = await storage.getEnrollment(req.params.id);
       if (!enrollment) {
@@ -774,93 +752,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Students Management
-  app.get('/api/students', async (req, res) => {
-    try {
-      const students = await storage.getUsersByRole('student');
-      // Remove passwords from response
-      const studentsResponse = students.map(({ password, ...student }) => student);
-      res.json(studentsResponse);
-    } catch (error: any) {
-      console.error('Error fetching students:', error);
-      res.status(500).json({ error: 'Failed to fetch students' });
-    }
-  });
 
-  app.get('/api/students/:id', async (req, res) => {
-    try {
-      const student = await storage.getUser(req.params.id);
-      if (!student || student.role !== 'student') {
-        return res.status(404).json({ error: 'Student not found' });
-      }
-      
-      // Remove password from response
-      const { password, ...studentResponse } = student;
-      res.json(studentResponse);
-    } catch (error: any) {
-      console.error('Error fetching student:', error);
-      res.status(500).json({ error: 'Failed to fetch student' });
-    }
-  });
-
-  app.post('/api/students', async (req, res) => {
-    try {
-      const validatedData = insertUserSchema.parse(req.body);
-      // Create student with role (default is already student)
-      const student = await storage.createUser(validatedData);
-      
-      // Remove password from response
-      const { password, ...studentResponse } = student;
-      res.status(201).json(studentResponse);
-    } catch (error: any) {
-      if (error.name === 'ZodError') {
-        return res.status(400).json({ error: 'Invalid student data', details: error.errors });
-      }
-      if (error.constraint || error.code === '23505') {
-        return res.status(409).json({ error: 'Student with this email already exists' });
-      }
-      console.error('Error creating student:', error);
-      res.status(500).json({ error: 'Failed to create student' });
-    }
-  });
-
-  app.patch('/api/students/:id', async (req, res) => {
-    try {
-      const validatedData = insertUserSchema.partial().parse(req.body);
-      const student = await storage.updateUser(req.params.id, validatedData);
-      if (!student) {
-        return res.status(404).json({ error: 'Student not found' });
-      }
-      
-      // Remove password from response
-      const { password, ...studentResponse } = student;
-      res.json(studentResponse);
-    } catch (error: any) {
-      if (error.name === 'ZodError') {
-        return res.status(400).json({ error: 'Invalid student data', details: error.errors });
-      }
-      if (error.constraint || error.code === '23505') {
-        return res.status(409).json({ error: 'Conflict with existing data' });
-      }
-      console.error('Error updating student:', error);
-      res.status(500).json({ error: 'Failed to update student' });
-    }
-  });
-
-  app.delete('/api/students/:id', async (req, res) => {
-    try {
-      const deleted = await storage.deleteUser(req.params.id);
-      if (!deleted) {
-        return res.status(404).json({ error: 'Student not found' });
-      }
-      res.status(204).send();
-    } catch (error: any) {
-      console.error('Error deleting student:', error);
-      res.status(500).json({ error: 'Failed to delete student' });
-    }
-  });
-
-  app.get('/api/students/:id/enrollments', async (req, res) => {
+  app.get('/api/students/:id/enrollments', requireAuth, async (req, res) => {
     try {
       const enrollments = await storage.getEnrollmentsByStudent(req.params.id);
       res.json(enrollments);
@@ -1178,7 +1071,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Timetable Management
-  app.get('/api/timetables', async (req, res) => {
+  app.get('/api/timetables', requireAuth, async (req, res) => {
     try {
       const { classId, labId, dayOfWeek } = req.query;
       
@@ -2097,7 +1990,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Users (General)
-  app.get('/api/users/:id', async (req, res) => {
+  app.get('/api/users/:id', requireAuth, async (req, res) => {
     try {
       const user = await storage.getUser(req.params.id);
       if (!user) {
@@ -2114,7 +2007,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin/Development endpoints
-  app.post('/api/admin/seed', async (req, res) => {
+  app.post('/api/admin/seed', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       // Create sample labs
       const labA = await storage.createLab({

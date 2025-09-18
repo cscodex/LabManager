@@ -311,9 +311,12 @@ export default function AuthPage() {
           </Tabs>
 
           {/* Demo credentials */}
-          <div className="text-center text-sm text-muted-foreground">
-            <p>For testing: Authentication is temporarily bypassed in development mode</p>
-          </div>
+          {process.env.NODE_ENV === 'development' && (
+            <div className="text-center text-sm text-muted-foreground">
+              <p>Demo instructor: john.smith@school.edu / password123</p>
+              <p>Demo student: alice.anderson@student.edu / student123</p>
+            </div>
+          )}
         </div>
       </div>
 
