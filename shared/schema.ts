@@ -11,6 +11,10 @@ export const users = pgTable("users", {
   role: text("role").notNull().default("student"), // instructor, student
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
+  // Student-specific fields
+  gradeLevel: integer("grade_level"), // 11 or 12 (nullable for instructors)
+  tradeType: text("trade_type"), // "Non Medical", "Commerce", "Medical" (nullable for instructors) 
+  section: text("section"), // "A" to "J" (nullable for instructors)
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -160,6 +164,14 @@ export const insertUserSchema = createInsertSchema(users).pick({
   password: true,
   firstName: true,
   lastName: true,
+  gradeLevel: true,
+  tradeType: true,
+  section: true,
+}).extend({
+  // Validation for student fields
+  gradeLevel: z.number().int().min(11).max(12).optional(),
+  tradeType: z.enum(["Non Medical", "Commerce", "Medical"]).optional(),
+  section: z.string().regex(/^[A-J]$/, "Section must be A through J").optional(),
 });
 
 // Server-only schema that includes role (for admin operations)
@@ -169,6 +181,14 @@ export const insertUserWithRoleSchema = createInsertSchema(users).pick({
   role: true,
   firstName: true,
   lastName: true,
+  gradeLevel: true,
+  tradeType: true,
+  section: true,
+}).extend({
+  // Validation for student fields
+  gradeLevel: z.number().int().min(11).max(12).optional(),
+  tradeType: z.enum(["Non Medical", "Commerce", "Medical"]).optional(),
+  section: z.string().regex(/^[A-J]$/, "Section must be A through J").optional(),
 });
 
 export const insertLabSchema = createInsertSchema(labs).pick({
