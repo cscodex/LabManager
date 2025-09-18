@@ -1152,7 +1152,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Timetable Management
-  app.get('/api/timetables', requireAuth, async (req, res) => {
+  app.get('/api/timetables', async (req, res) => {
     try {
       const { classId, labId, dayOfWeek } = req.query;
       

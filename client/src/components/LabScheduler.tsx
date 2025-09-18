@@ -1,45 +1,33 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, Clock, Users, MapPin, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { type SelectTimetable, type SelectClass, type SelectLab } from "@shared/schema";
 
-//todo: remove mock functionality
-const mockSessions = [
-  {
-    id: "1",
-    title: "Chemical Analysis Lab",
-    date: "2024-09-20",
-    time: "09:00 - 11:00",
-    room: "Lab Room 201",
-    instructor: "Dr. Smith",
-    enrolled: 18,
-    capacity: 20,
-    status: "upcoming"
-  },
-  {
-    id: "2", 
-    title: "Microscopy Techniques",
-    date: "2024-09-20",
-    time: "14:00 - 16:00",
-    room: "Lab Room 103",
-    instructor: "Prof. Johnson",
-    enrolled: 15,
-    capacity: 16,
-    status: "upcoming"
-  },
-  {
-    id: "3",
-    title: "Organic Synthesis",
-    date: "2024-09-21",
-    time: "10:00 - 12:00",
-    room: "Lab Room 205",
-    instructor: "Dr. Chen",
-    enrolled: 12,
-    capacity: 15,
-    status: "upcoming"
-  }
-];
+// Helper function to format time range
+const formatTimeRange = (startTime: string, endTime: string) => {
+  return `${startTime} - ${endTime}`;
+};
+
+// Helper function to get current date for a given day of week in selected week
+const getDateForDayOfWeek = (weekStart: Date, dayOfWeek: number) => {
+  const date = new Date(weekStart);
+  date.setDate(date.getDate() + dayOfWeek);
+  return date.toISOString().split('T')[0];
+};
+
+// Helper function to generate class display name
+const getClassDisplayName = (classData: SelectClass) => {
+  const tradeTypeMap = {
+    'non_medical': 'NM',
+    'medical': 'M', 
+    'commerce': 'C'
+  };
+  return `${classData.gradeLevel} ${tradeTypeMap[classData.tradeType]} ${classData.section}`;
+};
 
 const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 const timeSlots = ['09:00', '11:00', '14:00', '16:00'];
@@ -47,6 +35,17 @@ const timeSlots = ['09:00', '11:00', '14:00', '16:00'];
 export function LabScheduler() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
+  const [selectedClass, setSelectedClass] = useState<string>('all');
+
+  // Fetch classes for filtering
+  const { data: classes = [] } = useQuery<SelectClass[]>({
+    queryKey: ['/api/classes']
+  });
+
+  // Fetch labs for display
+  const { data: labs = [] } = useQuery<SelectLab[]>({
+    queryKey: ['/api/labs']
+  });
 
   const getWeekStart = (date: Date) => {
     const d = new Date(date);
@@ -54,6 +53,15 @@ export function LabScheduler() {
     const diff = d.getDate() - day + (day === 0 ? -6 : 1);
     return new Date(d.setDate(diff));
   };
+
+  // Get current week start for fetching timetables
+  const weekStart = getWeekStart(selectedDate);
+  const selectedDay = selectedDate.getDay() || 7; // Convert Sunday (0) to 7
+
+  // Fetch timetables for the selected week and class
+  const { data: timetables = [], isLoading } = useQuery<SelectTimetable[]>({
+    queryKey: ['/api/timetables', ...(selectedClass && selectedClass !== 'all' ? [selectedClass] : [])]
+  });
 
   const formatDateForComparison = (date: Date) => {
     return date.toISOString().split('T')[0];
@@ -63,8 +71,31 @@ export function LabScheduler() {
     const newDate = new Date(selectedDate);
     newDate.setDate(selectedDate.getDate() + (direction === 'next' ? 7 : -7));
     setSelectedDate(newDate);
-    console.log('Week navigation:', direction);
   };
+
+  // Convert timetables to session format for display
+  const sessions = timetables.map(timetable => {
+    const classData = classes.find(c => c.id === timetable.classId);
+    const lab = labs.find(l => l.id === timetable.labId);
+    const weekStartDate = getWeekStart(selectedDate);
+    const sessionDate = getDateForDayOfWeek(weekStartDate, timetable.dayOfWeek);
+    
+    return {
+      id: timetable.id,
+      title: classData ? `${getClassDisplayName(classData)} Lab Session` : 'Lab Session',
+      date: sessionDate,
+      time: formatTimeRange(timetable.startTime, timetable.endTime),
+      room: lab?.name || 'Lab Room',
+      instructor: timetable.instructor || 'TBA',
+      classDisplayName: classData ? getClassDisplayName(classData) : 'Unknown Class',
+      className: classData?.name || 'Unknown',
+      dayOfWeek: timetable.dayOfWeek,
+      startTime: timetable.startTime,
+      enrolled: 0, // TODO: Connect to enrollment system
+      capacity: lab?.capacity || 20,
+      status: "upcoming"
+    };
+  });
 
   return (
     <div className="space-y-6">
@@ -72,7 +103,7 @@ export function LabScheduler() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-semibold text-foreground">Lab Sessions</h2>
-          <p className="text-muted-foreground">Schedule and manage laboratory sessions</p>
+          <p className="text-muted-foreground">View and manage scheduled laboratory sessions</p>
         </div>
         <div className="flex gap-2">
           <Button 
@@ -83,12 +114,31 @@ export function LabScheduler() {
             {viewMode === 'list' ? <Calendar className="h-4 w-4 mr-2" /> : <Users className="h-4 w-4 mr-2" />}
             {viewMode === 'list' ? 'Calendar View' : 'List View'}
           </Button>
-          <Button data-testid="button-schedule-session" onClick={() => console.log('Schedule session clicked')}>
-            <Plus className="h-4 w-4 mr-2" />
-            Schedule Session
-          </Button>
         </div>
       </div>
+
+      {/* Filters */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <Select value={selectedClass} onValueChange={setSelectedClass}>
+                <SelectTrigger data-testid="select-class">
+                  <SelectValue placeholder="All Classes" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Classes</SelectItem>
+                  {classes.map((classItem) => (
+                    <SelectItem key={classItem.id} value={classItem.id}>
+                      {getClassDisplayName(classItem)} - {classItem.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Calendar View */}
       {viewMode === 'calendar' && (
@@ -122,8 +172,8 @@ export function LabScheduler() {
                   {weekDays.map((day, dayIndex) => {
                     const cellDate = new Date(getWeekStart(selectedDate));
                     cellDate.setDate(cellDate.getDate() + dayIndex);
-                    const session = mockSessions.find(s => 
-                      s.date === formatDateForComparison(cellDate) && s.time.startsWith(time)
+                    const session = sessions.find(s => 
+                      s.date === formatDateForComparison(cellDate) && s.startTime === time
                     );
                     
                     return (
@@ -131,11 +181,11 @@ export function LabScheduler() {
                         {session && (
                           <div className="text-xs">
                             <div className="font-medium truncate" data-testid={`session-title-${session.id}`}>
-                              {session.title}
+                              {session.classDisplayName}
                             </div>
-                            <div className="text-muted-foreground">{session.room}</div>
-                            <Badge variant="outline" className="text-xs">
-                              {session.enrolled}/{session.capacity}
+                            <div className="text-muted-foreground text-[10px]">{session.room}</div>
+                            <Badge variant="outline" className="text-[10px] py-0 px-1">
+                              {session.instructor}
                             </Badge>
                           </div>
                         )}
@@ -152,20 +202,27 @@ export function LabScheduler() {
       {/* List View */}
       {viewMode === 'list' && (
         <div className="grid gap-4">
-          {mockSessions.map((session) => (
+          {isLoading && (
+            <div className="text-center py-8 text-muted-foreground">
+              Loading lab sessions...
+            </div>
+          )}
+          {!isLoading && sessions.length === 0 && (
+            <div className="text-center py-8 text-muted-foreground">
+              No lab sessions found for the current selection.
+            </div>
+          )}
+          {sessions.map((session) => (
             <Card key={session.id} className="hover-elevate" data-testid={`session-card-${session.id}`}>
               <CardContent className="p-6">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="text-lg font-semibold text-foreground" data-testid={`text-session-title-${session.id}`}>
-                        {session.title}
+                        {session.classDisplayName}
                       </h3>
-                      <Badge 
-                        variant={session.enrolled === session.capacity ? 'destructive' : 'secondary'}
-                        data-testid={`badge-capacity-${session.id}`}
-                      >
-                        {session.enrolled === session.capacity ? 'Full' : `${session.capacity - session.enrolled} spots left`}
+                      <Badge variant="secondary" data-testid={`badge-class-${session.id}`}>
+                        {session.className}
                       </Badge>
                     </div>
                     
@@ -184,7 +241,7 @@ export function LabScheduler() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Users className="h-4 w-4" />
-                        <span data-testid={`text-enrollment-${session.id}`}>{session.enrolled}/{session.capacity} students</span>
+                        <span data-testid={`text-capacity-${session.id}`}>Capacity: {session.capacity} students</span>
                       </div>
                     </div>
                     
@@ -200,18 +257,10 @@ export function LabScheduler() {
                     <Button 
                       variant="outline" 
                       size="sm"
-                      onClick={() => console.log('Edit session:', session.id)}
-                      data-testid={`button-edit-${session.id}`}
+                      onClick={() => console.log('View enrollment details:', session.id)}
+                      data-testid={`button-enrollment-${session.id}`}
                     >
-                      Edit
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => console.log('View details:', session.id)}
-                      data-testid={`button-details-${session.id}`}
-                    >
-                      Details
+                      Enrollment
                     </Button>
                   </div>
                 </div>
