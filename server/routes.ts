@@ -400,13 +400,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Students Management - Get all students
-  app.get('/api/students', bypassAuth, requireAuth, requireRole(['instructor']), async (req, res) => {
+  // Students Management - Get all students (instructors) or current student info (students)
+  app.get('/api/students', bypassAuth, requireAuth, async (req, res) => {
     try {
-      const students = await storage.getUsersByRole('student');
-      // Remove passwords from response for security
-      const sanitizedStudents = students.map(({ password, ...student }) => student);
-      res.json(sanitizedStudents);
+      const userRole = req.user?.role;
+      
+      if (userRole === 'instructor') {
+        // Instructors can see all students
+        const students = await storage.getUsersByRole('student');
+        // Remove passwords from response for security
+        const sanitizedStudents = students.map(({ password, ...student }) => student);
+        res.json(sanitizedStudents);
+      } else if (userRole === 'student') {
+        // Students can only see their own information
+        const { password, ...currentStudent } = req.user!;
+        res.json([currentStudent]);
+      } else {
+        res.status(403).json({ error: 'Insufficient permissions', message: 'You don\'t have permission to access this resource' });
+      }
     } catch (error: any) {
       console.error('Error fetching students:', error);
       res.status(500).json({ error: 'Failed to fetch students' });
@@ -414,75 +425,148 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Enrollments with detailed information
-  app.get('/api/enrollments/details', bypassAuth, requireAuth, requireRole(['instructor']), async (req, res) => {
+  app.get('/api/enrollments/details', bypassAuth, requireAuth, async (req, res) => {
     try {
-      // Get all enrollments
-      const classes = await storage.getClasses();
-      const allEnrollments = [];
+      const userRole = req.user?.role;
+      const userId = req.user?.id;
       
-      for (const cls of classes) {
-        const enrollments = await storage.getEnrollmentsByClass(cls.id);
-        for (const enrollment of enrollments) {
-          // Get student info
-          const student = await storage.getUser(enrollment.studentId);
-          if (!student) continue;
-          
-          // Get instructor info
-          const instructor = await storage.getUser(cls.instructorId);
-          
-          // Get lab info
-          const lab = await storage.getLab(cls.labId);
-          
-          // Get group and computer info if available
-          let group = null;
-          let computer = null;
-          if (enrollment.groupId) {
-            group = await storage.getGroup(enrollment.groupId);
-            if (group && group.computerId) {
-              computer = await storage.getComputer(group.computerId);
+      if (userRole === 'instructor') {
+        // Instructors can see all enrollments  
+        const classes = await storage.getClasses();
+        const allEnrollments = [];
+        
+        for (const cls of classes) {
+          const enrollments = await storage.getEnrollmentsByClass(cls.id);
+          for (const enrollment of enrollments) {
+            // Get student info
+            const student = await storage.getUser(enrollment.studentId);
+            if (!student) continue;
+            
+            // Get instructor info
+            const instructor = await storage.getUser(cls.instructorId);
+            
+            // Get lab info
+            const lab = await storage.getLab(cls.labId);
+            
+            // Get group and computer info if available
+            let group = null;
+            let computer = null;
+            if (enrollment.groupId) {
+              group = await storage.getGroup(enrollment.groupId);
+              if (group && group.computerId) {
+                computer = await storage.getComputer(group.computerId);
+              }
             }
+            
+            // Count sessions for completion tracking
+            const sessions = await storage.getSessionsByClass(cls.id);
+            
+            allEnrollments.push({
+              ...enrollment,
+              student: {
+                id: student.id,
+                firstName: student.firstName,
+                lastName: student.lastName,
+                email: student.email
+              },
+              class: {
+                id: cls.id,
+                name: cls.name,
+                displayName: cls.displayName,
+                gradeLevel: cls.gradeLevel,
+                tradeType: cls.tradeType,
+                section: cls.section
+              },
+              instructor: instructor ? {
+                id: instructor.id,
+                firstName: instructor.firstName,
+                lastName: instructor.lastName
+              } : null,
+              lab: lab ? {
+                name: lab.name
+              } : null,
+              group: group ? {
+                name: group.name
+              } : null,
+              computer: computer ? {
+                name: computer.name
+              } : null,
+              completedSessions: 0, // TODO: Implement session completion tracking
+              totalSessions: sessions.length
+            });
           }
-          
-          // Count sessions for completion tracking
-          const sessions = await storage.getSessionsByClass(cls.id);
-          
-          allEnrollments.push({
-            ...enrollment,
-            student: {
-              id: student.id,
-              firstName: student.firstName,
-              lastName: student.lastName,
-              email: student.email
-            },
-            class: {
-              id: cls.id,
-              name: cls.name,
-              displayName: cls.displayName,
-              gradeLevel: cls.gradeLevel,
-              tradeType: cls.tradeType,
-              section: cls.section
-            },
-            instructor: instructor ? {
-              id: instructor.id,
-              firstName: instructor.firstName,
-              lastName: instructor.lastName
-            } : null,
-            lab: lab ? {
-              name: lab.name
-            } : null,
-            group: group ? {
-              name: group.name
-            } : null,
-            computer: computer ? {
-              name: computer.name
-            } : null,
-            completedSessions: 0, // TODO: Implement session completion tracking
-            totalSessions: sessions.length
-          });
         }
+        
+        res.json(allEnrollments);
+      } else if (userRole === 'student') {
+        // Students can only see their own enrollments
+        const classes = await storage.getClasses();
+        const studentEnrollments = [];
+        
+        for (const cls of classes) {
+          const enrollments = await storage.getEnrollmentsByClass(cls.id);
+          const studentEnrollment = enrollments.find(e => e.studentId === userId && e.isActive);
+          
+          if (studentEnrollment) {
+            // Get instructor info
+            const instructor = await storage.getUser(cls.instructorId);
+            
+            // Get lab info
+            const lab = await storage.getLab(cls.labId);
+            
+            // Get group and computer info if available
+            let group = null;
+            let computer = null;
+            if (studentEnrollment.groupId) {
+              group = await storage.getGroup(studentEnrollment.groupId);
+              if (group && group.computerId) {
+                computer = await storage.getComputer(group.computerId);
+              }
+            }
+            
+            // Count sessions for completion tracking
+            const sessions = await storage.getSessionsByClass(cls.id);
+            
+            studentEnrollments.push({
+              ...studentEnrollment,
+              student: {
+                id: req.user!.id,
+                firstName: req.user!.firstName,
+                lastName: req.user!.lastName,
+                email: req.user!.email
+              },
+              class: {
+                id: cls.id,
+                name: cls.name,
+                displayName: cls.displayName,
+                gradeLevel: cls.gradeLevel,
+                tradeType: cls.tradeType,
+                section: cls.section
+              },
+              instructor: instructor ? {
+                id: instructor.id,
+                firstName: instructor.firstName,
+                lastName: instructor.lastName
+              } : null,
+              lab: lab ? {
+                name: lab.name
+              } : null,
+              group: group ? {
+                name: group.name
+              } : null,
+              computer: computer ? {
+                name: computer.name
+              } : null,
+              completedSessions: 0, // TODO: Implement session completion tracking
+              totalSessions: sessions.length
+            });
+          }
+        }
+        
+        res.json(studentEnrollments);
+      } else {
+        res.status(403).json({ error: 'Insufficient permissions', message: 'You don\'t have permission to access this resource' });
       }
-      
-      res.json(allEnrollments);
     } catch (error: any) {
       console.error('Error fetching enrollment details:', error);
       res.status(500).json({ error: 'Failed to fetch enrollment details' });
@@ -1922,7 +2006,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let totalAssignments = 0;
         let totalSubmissions = 0;
         let totalGrades = 0;
-        let allScores = [];
+        let allScores: number[] = [];
         let totalLateSubmissions = 0;
         
         for (const classData of classes) {
