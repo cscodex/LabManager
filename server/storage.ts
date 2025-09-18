@@ -55,7 +55,7 @@ export interface IStorage {
   createTimetable(timetable: InsertTimetable): Promise<Timetable>;
   updateTimetable(id: string, timetable: Partial<InsertTimetable>): Promise<Timetable | undefined>;
   deleteTimetable(id: string): Promise<boolean>;
-  checkTimetableConflicts(labId: string, dayOfWeek: number, startTime: string, endTime: string, excludeTimetableId?: string): Promise<{ hasConflicts: boolean; conflictingTimetables: Timetable[] }>;
+  checkTimetableConflicts(labId: string, dayOfWeek: number, startTime: string, endTime: string, excludeTimetableId?: string, classId?: string): Promise<{ hasConflicts: boolean; conflictingTimetables: Timetable[] }>;
   
   // Computers
   getComputersByLab(labId: string): Promise<Computer[]>;
@@ -367,10 +367,10 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0;
   }
 
-  async checkTimetableConflicts(labId: string, dayOfWeek: number, startTime: string, endTime: string, excludeTimetableId?: string): Promise<{ hasConflicts: boolean; conflictingTimetables: Timetable[] }> {
+  async checkTimetableConflicts(labId: string, dayOfWeek: number, startTime: string, endTime: string, excludeTimetableId?: string, classId?: string): Promise<{ hasConflicts: boolean; conflictingTimetables: Timetable[] }> {
+    // Get all timetables for the same day
     const timetables = await db.query.timetables.findMany({
       where: and(
-        eq(schema.timetables.labId, labId),
         eq(schema.timetables.dayOfWeek, dayOfWeek),
         eq(schema.timetables.isActive, true)
       ),
@@ -382,7 +382,7 @@ export class DatabaseStorage implements IStorage {
         return false;
       }
       
-      // Check for time overlap
+      // Check for time overlap first
       const existingStart = timetable.startTime;
       const existingEnd = timetable.endTime;
       
@@ -397,8 +397,18 @@ export class DatabaseStorage implements IStorage {
       const existStart = timeToMinutes(existingStart);
       const existEnd = timeToMinutes(existingEnd);
       
-      // Check for overlap
-      return newStart < existEnd && newEnd > existStart;
+      // Check for time overlap first
+      const hasTimeOverlap = newStart < existEnd && newEnd > existStart;
+      
+      if (!hasTimeOverlap) {
+        return false;
+      }
+      
+      // Check for conflicts: either same lab OR same class
+      const isLabConflict = timetable.labId === labId;
+      const isClassConflict = classId && timetable.classId === classId;
+      
+      return isLabConflict || isClassConflict;
     });
     
     return {

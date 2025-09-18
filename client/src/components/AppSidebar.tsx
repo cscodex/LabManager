@@ -1,4 +1,4 @@
-import { Calendar, Users, FileText, BarChart3, Settings, Home, GraduationCap } from "lucide-react";
+import { Calendar, Users, FileText, BarChart3, Settings, Home, GraduationCap, Clock } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -17,6 +17,7 @@ const menuItems = [
   { title: "Students", url: "/students", icon: Users },
   { title: "Groups", url: "/groups", icon: Users },
   { title: "Lab Sessions", url: "/sessions", icon: Calendar },
+  { title: "Timetable", url: "/timetable", icon: Clock },
   { title: "Submissions", url: "/submissions", icon: FileText },
   { title: "Grading", url: "/grading", icon: GraduationCap },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },

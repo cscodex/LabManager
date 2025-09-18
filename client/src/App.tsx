@@ -14,6 +14,7 @@ import Submissions from "@/pages/Submissions";
 import Grading from "@/pages/Grading";
 import Analytics from "@/pages/Analytics";
 import Settings from "@/pages/Settings";
+import { Timetable } from "@/pages/Timetable";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -26,6 +27,7 @@ function Router() {
       <Route path="/submissions" component={Submissions} />
       <Route path="/grading" component={Grading} />
       <Route path="/analytics" component={Analytics} />
+      <Route path="/timetable" component={Timetable} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>

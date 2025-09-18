@@ -1196,14 +1196,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         validatedData.labId,
         validatedData.dayOfWeek,
         validatedData.startTime,
-        validatedData.endTime
+        validatedData.endTime,
+        undefined,
+        validatedData.classId
       );
       
       if (hasConflicts) {
+        // Determine conflict type for better error messaging
+        const firstConflict = conflictingTimetables[0];
+        const isLabConflict = firstConflict.labId === validatedData.labId;
+        const isClassConflict = firstConflict.classId === validatedData.classId;
+        
         return res.status(409).json({
-          error: 'Timetable conflict detected',
-          conflictingTimetables,
-          message: 'This time slot conflicts with existing timetable entries in the same lab'
+          error: 'SCHEDULE_CONFLICT',
+          conflictType: isClassConflict ? 'class' : 'lab',
+          conflicts: conflictingTimetables,
+          message: isClassConflict 
+            ? 'This class already has a session at this time'
+            : 'Lab is already occupied at this time'
         });
       }
       
@@ -1233,6 +1243,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(404).json({ error: 'Timetable entry not found' });
         }
         
+        const classId = validatedData.classId ?? currentTimetable.classId;
         const dayOfWeek = validatedData.dayOfWeek ?? currentTimetable.dayOfWeek;
         const startTime = validatedData.startTime ?? currentTimetable.startTime;
         const endTime = validatedData.endTime ?? currentTimetable.endTime;
@@ -1243,14 +1254,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           dayOfWeek,
           startTime,
           endTime,
-          req.params.id
+          req.params.id,
+          classId
         );
         
         if (hasConflicts) {
+          // Determine conflict type for better error messaging
+          const firstConflict = conflictingTimetables[0];
+          const isLabConflict = firstConflict.labId === labId;
+          const isClassConflict = firstConflict.classId === classId;
+          
           return res.status(409).json({
-            error: 'Timetable conflict detected',
-            conflictingTimetables,
-            message: 'This time slot conflicts with existing timetable entries in the same lab'
+            error: 'SCHEDULE_CONFLICT',
+            conflictType: isClassConflict ? 'class' : 'lab',
+            conflicts: conflictingTimetables,
+            message: isClassConflict 
+              ? 'This class already has a session at this time'
+              : 'Lab is already occupied at this time'
           });
         }
       }
