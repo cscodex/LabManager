@@ -3,6 +3,8 @@ import { Pool } from "pg";
 import { eq, and } from "drizzle-orm";
 import * as bcrypt from "bcrypt";
 import * as schema from "@shared/schema";
+import session from "express-session";
+import connectPg from "connect-pg-simple";
 import type { 
   User, InsertUser, InsertUserWithRole, Lab, InsertLab, Class, InsertClass,
   Computer, InsertComputer, Group, InsertGroup, 
@@ -19,6 +21,9 @@ const pool = new Pool({
 const db = drizzle(pool, { schema });
 
 export interface IStorage {
+  // Session storage
+  sessionStore: session.Store;
+  
   // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
@@ -108,7 +113,18 @@ export interface IStorage {
   createGrade(grade: InsertGrade): Promise<Grade>;
 }
 
+const PostgresSessionStore = connectPg(session);
+
 export class DatabaseStorage implements IStorage {
+  sessionStore: session.Store;
+
+  constructor() {
+    this.sessionStore = new PostgresSessionStore({ 
+      pool, 
+      createTableIfMissing: true 
+    });
+  }
+
   // Users
   async getUser(id: string): Promise<User | undefined> {
     const result = await db.query.users.findFirst({
@@ -266,7 +282,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateClass(id: string, classData: Partial<InsertClass>): Promise<Class | undefined> {
-    let updateData = { ...classData };
+    let updateData: any = { ...classData };
     
     // Regenerate displayName if any relevant fields are updated
     if (classData.gradeLevel || classData.tradeType || classData.section) {
