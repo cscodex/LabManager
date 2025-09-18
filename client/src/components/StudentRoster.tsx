@@ -8,15 +8,17 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Plus, Search, Mail, MoreVertical, AlertCircle, Edit, Trash2, UserPlus, Filter } from "lucide-react";
-import { useState } from "react";
+import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import { Plus, Search, Mail, MoreVertical, AlertCircle, Edit, Trash2, UserPlus, Filter, ChevronLeft, ChevronRight } from "lucide-react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { User, Class, Enrollment, Lab, Group, insertUserSchema } from "@shared/schema";
+import type { User, Class, Enrollment, Lab, Group } from "@shared/schema";
+import { baseUserSchema } from "@shared/schema";
 
 interface StudentEnrollmentDetails {
   student: User;
@@ -68,17 +70,13 @@ interface EnrollmentWithDetails {
   };
 }
 
-// Form schemas
-const addStudentSchema = z.object({
-  firstName: z.string().min(1, "First name is required"),
-  lastName: z.string().min(1, "Last name is required"),
-  email: z.string().email("Please enter a valid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-  gradeLevel: z.number().int().min(11).max(12),
-  tradeType: z.enum(["NM", "M", "C"]),
-  section: z.string().regex(/^[A-J]$/, "Section must be A through J"),
+// Form schemas - extend the shared schema for consistency
+const addStudentSchema = baseUserSchema.extend({
+  gradeLevel: z.number().int().min(11).max(12), // Make required for students
+  tradeType: z.enum(["NM", "M", "C"]), // Make required for students  
+  section: z.string().regex(/^[A-J]$/, "Section must be A through J"), // Make required for students
 }).refine((data) => {
-  // Section validation based on trade type
+  // Section validation based on trade type (matches backend rules)
   if (data.tradeType === "NM") {
     return /^[A-F]$/.test(data.section);
   } else if (data.tradeType === "M" || data.tradeType === "C") {
@@ -108,6 +106,16 @@ export function StudentRoster() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEnrollDialog, setShowEnrollDialog] = useState(false);
   const [selectedStudentForEnroll, setSelectedStudentForEnroll] = useState<string | null>(null);
+  const [selectedTradeType, setSelectedTradeType] = useState<string>("NM");
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  
+  // Additional filters for new student fields
+  const [filterGrade, setFilterGrade] = useState<string>('all');
+  const [filterTrade, setFilterTrade] = useState<string>('all');
+  const [filterSection, setFilterSection] = useState<string>('all');
   
   const { toast } = useToast();
 
@@ -160,8 +168,39 @@ export function StudentRoster() {
     // Group filter
     const matchesGroup = filterGroup === 'all' || enrollment.group?.name === filterGroup;
     
-    return matchesSearch && matchesClass && matchesLab && matchesGroup;
+    // Grade level filter
+    const matchesGrade = filterGrade === 'all' || enrollment.class?.gradeLevel?.toString() === filterGrade;
+    
+    // Trade type filter  
+    const matchesTrade = filterTrade === 'all' || enrollment.class?.tradeType === filterTrade;
+    
+    // Section filter
+    const matchesSection = filterSection === 'all' || enrollment.class?.section === filterSection;
+    
+    return matchesSearch && matchesClass && matchesLab && matchesGroup && matchesGrade && matchesTrade && matchesSection;
   });
+
+  // Pagination logic
+  const totalItems = filteredEnrollments.length;
+  const totalPages = Math.ceil(totalItems / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedEnrollments = filteredEnrollments.slice(startIndex, endIndex);
+
+  // Reset pagination when filters change
+  const resetPagination = () => setCurrentPage(1);
+
+  // Guard against out-of-range pages when filters or search change
+  useEffect(() => {
+    if (totalPages > 0 && currentPage > totalPages) {
+      setCurrentPage(Math.max(1, totalPages));
+    }
+  }, [totalPages, currentPage]);
+
+  // Reset pagination when search term changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   const handleStudentSelect = (studentId: string) => {
     setSelectedStudents(prev => 
@@ -361,15 +400,15 @@ export function StudentRoster() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Grade Level</FormLabel>
-                        <Select onValueChange={(value) => field.onChange(parseInt(value))} defaultValue={field.value?.toString()}>
+                        <Select value={field.value?.toString()} onValueChange={(value) => field.onChange(parseInt(value))}>
                           <FormControl>
                             <SelectTrigger data-testid="select-grade-level">
                               <SelectValue placeholder="Select Grade" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="11">11</SelectItem>
-                            <SelectItem value="12">12</SelectItem>
+                            <SelectItem value="11" data-testid="option-grade-11">11</SelectItem>
+                            <SelectItem value="12" data-testid="option-grade-12">12</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -382,16 +421,24 @@ export function StudentRoster() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Trade Type</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select 
+                          value={field.value} 
+                          onValueChange={(value) => {
+                            field.onChange(value);
+                            setSelectedTradeType(value);
+                            // Reset section when trade type changes
+                            addStudentForm.setValue("section", "A");
+                          }}
+                        >
                           <FormControl>
                             <SelectTrigger data-testid="select-trade-type">
                               <SelectValue placeholder="Select Trade" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="NM">Non Medical</SelectItem>
-                            <SelectItem value="M">Medical</SelectItem>
-                            <SelectItem value="C">Commerce</SelectItem>
+                            <SelectItem value="NM" data-testid="option-trade-NM">Non Medical</SelectItem>
+                            <SelectItem value="M" data-testid="option-trade-M">Medical</SelectItem>
+                            <SelectItem value="C" data-testid="option-trade-C">Commerce</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -401,31 +448,37 @@ export function StudentRoster() {
                   <FormField
                     control={addStudentForm.control}
                     name="section"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Section</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger data-testid="select-section">
-                              <SelectValue placeholder="Select Section" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="A">A</SelectItem>
-                            <SelectItem value="B">B</SelectItem>
-                            <SelectItem value="C">C</SelectItem>
-                            <SelectItem value="D">D</SelectItem>
-                            <SelectItem value="E">E</SelectItem>
-                            <SelectItem value="F">F</SelectItem>
-                            <SelectItem value="G">G</SelectItem>
-                            <SelectItem value="H">H</SelectItem>
-                            <SelectItem value="I">I</SelectItem>
-                            <SelectItem value="J">J</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                    render={({ field }) => {
+                      // Dynamic section options based on trade type
+                      const availableSections = selectedTradeType === "NM" 
+                        ? ["A", "B", "C", "D", "E", "F"]
+                        : ["A", "B"]; // M and C only have A-B
+                      
+                      return (
+                        <FormItem>
+                          <FormLabel>Section</FormLabel>
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-section">
+                                <SelectValue placeholder="Select Section" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {availableSections.map((section) => (
+                                <SelectItem 
+                                  key={section} 
+                                  value={section} 
+                                  data-testid={`option-section-${section}`}
+                                >
+                                  {section}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      );
+                    }}
                   />
                 </div>
                 <DialogFooter>
@@ -476,10 +529,10 @@ export function StudentRoster() {
               </div>
             </div>
             
-            {/* Filters */}
+            {/* Primary Filters */}
             <div className="flex flex-col sm:flex-row gap-4">
               <div className="flex-1">
-                <Select value={filterClass} onValueChange={setFilterClass}>
+                <Select value={filterClass} onValueChange={(value) => { setFilterClass(value); resetPagination(); }}>
                   <SelectTrigger data-testid="select-filter-class">
                     <SelectValue placeholder="Filter by Class" />
                   </SelectTrigger>
@@ -495,7 +548,7 @@ export function StudentRoster() {
               </div>
               
               <div className="flex-1">
-                <Select value={filterLab} onValueChange={setFilterLab}>
+                <Select value={filterLab} onValueChange={(value) => { setFilterLab(value); resetPagination(); }}>
                   <SelectTrigger data-testid="select-filter-lab">
                     <SelectValue placeholder="Filter by Lab" />
                   </SelectTrigger>
@@ -511,7 +564,7 @@ export function StudentRoster() {
               </div>
               
               <div className="flex-1">
-                <Select value={filterGroup} onValueChange={setFilterGroup}>
+                <Select value={filterGroup} onValueChange={(value) => { setFilterGroup(value); resetPagination(); }}>
                   <SelectTrigger data-testid="select-filter-group">
                     <SelectValue placeholder="Filter by Group" />
                   </SelectTrigger>
@@ -526,6 +579,66 @@ export function StudentRoster() {
                 </Select>
               </div>
             </div>
+
+            {/* Student Classification Filters */}
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1">
+                <Select value={filterGrade} onValueChange={(value) => { setFilterGrade(value); resetPagination(); }}>
+                  <SelectTrigger data-testid="select-filter-grade">
+                    <SelectValue placeholder="Filter by Grade" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Grades</SelectItem>
+                    <SelectItem value="11">Grade 11</SelectItem>
+                    <SelectItem value="12">Grade 12</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="flex-1">
+                <Select value={filterTrade} onValueChange={(value) => { setFilterTrade(value); resetPagination(); }}>
+                  <SelectTrigger data-testid="select-filter-trade">
+                    <SelectValue placeholder="Filter by Trade" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Trades</SelectItem>
+                    <SelectItem value="NM">Non Medical</SelectItem>
+                    <SelectItem value="M">Medical</SelectItem>
+                    <SelectItem value="C">Commerce</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="flex-1">
+                <Select value={filterSection} onValueChange={(value) => { setFilterSection(value); resetPagination(); }}>
+                  <SelectTrigger data-testid="select-filter-section">
+                    <SelectValue placeholder="Filter by Section" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Sections</SelectItem>
+                    {["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"].map((section) => (
+                      <SelectItem key={section} value={section}>
+                        Section {section}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex-1">
+                <Select value={pageSize.toString()} onValueChange={(value) => { setPageSize(parseInt(value)); resetPagination(); }}>
+                  <SelectTrigger data-testid="select-page-size">
+                    <SelectValue placeholder="Items per page" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5">5 per page</SelectItem>
+                    <SelectItem value="10">10 per page</SelectItem>
+                    <SelectItem value="25">25 per page</SelectItem>
+                    <SelectItem value="50">50 per page</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -535,7 +648,7 @@ export function StudentRoster() {
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <span>Students ({isLoading ? '...' : filteredEnrollments.length})</span>
+              <span>Students ({isLoading ? '...' : `${startIndex + 1}-${Math.min(endIndex, totalItems)} of ${totalItems}`})</span>
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -587,7 +700,7 @@ export function StudentRoster() {
             </div>
           ) : (
             <div className="divide-y">
-              {filteredEnrollments.map((enrollment: EnrollmentWithDetails) => {
+              {paginatedEnrollments.map((enrollment: EnrollmentWithDetails) => {
                 const student = enrollment.student!;
                 const studentName = `${student.firstName} ${student.lastName}`;
                 const className = enrollment.class?.displayName || 'Unknown Class';
@@ -697,6 +810,78 @@ export function StudentRoster() {
             </div>
           )}
         </CardContent>
+        
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="px-4 py-3 border-t flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span>Page {currentPage} of {totalPages}</span>
+            </div>
+            <Pagination>
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious 
+                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                    data-testid="button-prev-page"
+                    className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                  />
+                </PaginationItem>
+                
+                {/* Page Numbers */}
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = currentPage - 2 + i;
+                  }
+                  
+                  return (
+                    <PaginationItem key={pageNum}>
+                      <PaginationLink
+                        onClick={() => setCurrentPage(pageNum)}
+                        isActive={currentPage === pageNum}
+                        data-testid={`button-page-${pageNum}`}
+                        className="cursor-pointer"
+                      >
+                        {pageNum}
+                      </PaginationLink>
+                    </PaginationItem>
+                  );
+                })}
+                
+                {totalPages > 5 && currentPage < totalPages - 2 && (
+                  <>
+                    <PaginationItem>
+                      <PaginationEllipsis />
+                    </PaginationItem>
+                    <PaginationItem>
+                      <PaginationLink
+                        onClick={() => setCurrentPage(totalPages)}
+                        data-testid={`button-page-${totalPages}`}
+                        className="cursor-pointer"
+                      >
+                        {totalPages}
+                      </PaginationLink>
+                    </PaginationItem>
+                  </>
+                )}
+                
+                <PaginationItem>
+                  <PaginationNext 
+                    onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                    data-testid="button-next-page"
+                    className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
+        )}
       </Card>
 
       {/* Enrollment Dialog */}
