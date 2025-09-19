@@ -52,6 +52,7 @@ export function GroupManager() {
   const [selectedLab, setSelectedLab] = useState<string>("all");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showManageDialog, setShowManageDialog] = useState(false);
+  const [showReassignDialog, setShowReassignDialog] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<GroupWithDetails | null>(null);
   
   const { toast } = useToast();
@@ -99,11 +100,8 @@ export function GroupManager() {
   };
 
   const handleReassignComputer = (group: GroupWithDetails) => {
-    // This will be implemented with a separate dialog
-    toast({
-      title: "Feature coming soon",
-      description: "Computer reassignment functionality will be available soon",
-    });
+    setSelectedGroup(group);
+    setShowReassignDialog(true);
   };
 
   return (
@@ -149,6 +147,18 @@ export function GroupManager() {
           onOpenChange={setShowManageDialog}
           students={students}
           enrollments={enrollments}
+          groups={groups}
+        />
+      )}
+
+      {/* Reassign Computer Dialog */}
+      {selectedGroup && (
+        <ReassignComputerDialog
+          group={selectedGroup}
+          open={showReassignDialog}
+          onOpenChange={setShowReassignDialog}
+          computers={computers}
+          labs={labs}
           groups={groups}
         />
       )}
@@ -990,6 +1000,167 @@ function ManageMembersDialog({
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Reassign Computer Dialog Component
+function ReassignComputerDialog({
+  group,
+  open,
+  onOpenChange,
+  computers,
+  labs,
+  groups
+}: {
+  group: GroupWithDetails;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  computers: Computer[];
+  labs: Lab[];
+  groups: GroupWithDetails[];
+}) {
+  const [selectedLabId, setSelectedLabId] = useState<string>(group.labId || "");
+  const [selectedComputerId, setSelectedComputerId] = useState<string>(group.computerId || "none");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  // Get available computers for selected lab
+  const availableComputers = selectedLabId 
+    ? computers.filter(c => {
+        if (c.labId !== selectedLabId || !c.isActive) return false;
+        // Exclude computers already assigned to other groups
+        const assignedComputerIds = groups
+          .filter(g => g.id !== group.id && g.computerId)
+          .map(g => g.computerId);
+        return !assignedComputerIds.includes(c.id);
+      })
+    : [];
+
+  // Reset computer selection when lab changes
+  useEffect(() => {
+    if (selectedLabId && selectedComputerId !== "none") {
+      const isComputerInLab = availableComputers.some(c => c.id === selectedComputerId);
+      if (!isComputerInLab) {
+        setSelectedComputerId("none");
+      }
+    }
+  }, [selectedLabId, availableComputers, selectedComputerId]);
+
+  const reassignComputerMutation = useMutation({
+    mutationFn: async () => {
+      const updateData: { labId: string; computerId: string | null } = {
+        labId: selectedLabId,
+        computerId: selectedComputerId === "none" ? null : selectedComputerId
+      };
+      
+      return await apiRequest(`/api/groups/${group.id}`, 'PATCH', updateData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/groups/details'] });
+      toast({ 
+        title: "Success", 
+        description: "Computer assignment updated successfully" 
+      });
+      onOpenChange(false);
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to reassign computer",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  const handleSave = () => {
+    reassignComputerMutation.mutate();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle>Reassign Computer</DialogTitle>
+          <DialogDescription>
+            Change the computer assignment for {group.name}
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="space-y-4">
+          {/* Current Assignment */}
+          <div className="p-4 bg-muted/50 rounded-lg">
+            <h4 className="text-sm font-medium mb-2">Current Assignment</h4>
+            <div className="space-y-1 text-sm">
+              <div>Lab: {group.lab?.name || 'No lab assigned'}</div>
+              <div>Computer: {group.computer?.name || 'No computer assigned'}</div>
+            </div>
+          </div>
+
+          {/* Lab Selection */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Lab</label>
+            <Select value={selectedLabId} onValueChange={(value) => {
+              setSelectedLabId(value);
+              setSelectedComputerId("none");
+            }}>
+              <SelectTrigger data-testid="select-reassign-lab">
+                <SelectValue placeholder="Select lab" />
+              </SelectTrigger>
+              <SelectContent>
+                {labs.map((lab) => (
+                  <SelectItem key={lab.id} value={lab.id}>
+                    {lab.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Computer Selection */}
+          {selectedLabId && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Computer</label>
+              <Select value={selectedComputerId} onValueChange={setSelectedComputerId}>
+                <SelectTrigger data-testid="select-reassign-computer">
+                  <SelectValue placeholder="Select computer" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Computer Assigned</SelectItem>
+                  {availableComputers.map((computer) => (
+                    <SelectItem key={computer.id} value={computer.id}>
+                      {computer.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+                </Select>
+              
+              {availableComputers.length === 0 && selectedLabId && (
+                <p className="text-sm text-muted-foreground">
+                  No available computers in this lab
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button 
+            variant="outline" 
+            onClick={() => onOpenChange(false)}
+            disabled={reassignComputerMutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleSave}
+            disabled={reassignComputerMutation.isPending || !selectedLabId}
+            data-testid="button-save-reassign"
+          >
+            {reassignComputerMutation.isPending ? 'Saving...' : 'Save Changes'}
           </Button>
         </DialogFooter>
       </DialogContent>

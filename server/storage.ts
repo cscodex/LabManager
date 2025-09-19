@@ -70,12 +70,16 @@ export interface IStorage {
   deleteComputer(id: string): Promise<boolean>;
   
   // Groups
+  getAllGroups(): Promise<Group[]>;
   getGroupsByClass(classId: string): Promise<Group[]>;
   getGroup(id: string): Promise<Group | undefined>;
   createGroup(group: InsertGroup): Promise<Group>;
   createGroupWithStudents(group: InsertGroup, studentIds: string[]): Promise<Group>;
   updateGroup(id: string, group: Partial<InsertGroup>): Promise<Group | undefined>;
   deleteGroup(id: string): Promise<boolean>;
+  addGroupMember(groupId: string, studentId: string): Promise<boolean>;
+  removeGroupMember(groupId: string, studentId: string): Promise<boolean>;
+  getGroupsWithDetails(): Promise<any[]>;
   
   // Enrollments
   getEnrollmentsByClass(classId: string): Promise<Enrollment[]>;

@@ -1,5 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
+import { z } from "zod";
 import { storage } from "./storage";
 import { setupAuth, requireAuth, requireRole } from "./auth";
 import { 
@@ -411,15 +412,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Group member management endpoints
   app.post('/api/groups/:id/members', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
-      const { studentId } = req.body;
+      // Zod validation
+      const memberSchema = z.object({
+        studentId: z.string().uuid('Invalid student ID format')
+      });
       
-      if (!studentId) {
-        return res.status(400).json({ error: 'Student ID is required' });
+      const { studentId } = memberSchema.parse(req.body);
+      
+      // Ownership verification - ensure instructor owns the class
+      const group = await storage.getGroup(req.params.id);
+      if (!group) {
+        return res.status(404).json({ error: 'Group not found' });
+      }
+      
+      const classInfo = await storage.getClass(group.classId);
+      if (!classInfo) {
+        return res.status(404).json({ error: 'Class not found' });
+      }
+      
+      if (classInfo.instructorId !== req.user!.id) {
+        return res.status(403).json({ error: 'You can only modify groups in your own classes' });
       }
 
       await storage.addGroupMember(req.params.id, studentId);
       res.json({ message: 'Member added successfully' });
     } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: 'Invalid input data', details: error.errors });
+      }
       console.error('Error adding group member:', error);
       res.status(400).json({ error: error.message || 'Failed to add member' });
     }
@@ -427,6 +447,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete('/api/groups/:id/members/:studentId', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
+      // Ownership verification - ensure instructor owns the class
+      const group = await storage.getGroup(req.params.id);
+      if (!group) {
+        return res.status(404).json({ error: 'Group not found' });
+      }
+      
+      const classInfo = await storage.getClass(group.classId);
+      if (!classInfo) {
+        return res.status(404).json({ error: 'Class not found' });
+      }
+      
+      if (classInfo.instructorId !== req.user!.id) {
+        return res.status(403).json({ error: 'You can only modify groups in your own classes' });
+      }
+
       await storage.removeGroupMember(req.params.id, req.params.studentId);
       res.json({ message: 'Member removed successfully' });
     } catch (error: any) {
