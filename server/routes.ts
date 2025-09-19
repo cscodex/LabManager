@@ -68,7 +68,29 @@ const validateStudentEnrollment = async (studentId: string, assignmentId: string
 export async function registerRoutes(app: Express): Promise<Server> {
   // Set up authentication
   setupAuth(app);
-  
+
+  // Health check endpoint for deployment monitoring
+  app.get('/api/health', async (req, res) => {
+    try {
+      // Test database connection
+      await storage.getLabs();
+      res.status(200).json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        database: 'connected',
+        version: process.env.npm_package_version || '1.0.0'
+      });
+    } catch (error: any) {
+      console.error('Health check failed:', error);
+      res.status(503).json({
+        status: 'unhealthy',
+        timestamp: new Date().toISOString(),
+        database: 'disconnected',
+        error: error.message
+      });
+    }
+  });
+
   // Labs Management
   app.get('/api/labs', requireAuth, async (req, res) => {
     try {

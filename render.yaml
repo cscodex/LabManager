@@ -1,0 +1,86 @@
+services:
+  # Main Web Service
+  - type: web
+    name: labmanager
+    runtime: node
+    plan: starter  # Change to 'standard' or higher for production
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    healthCheckPath: /
+    
+    # Environment Variables
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000  # Render's default port
+      
+      # Database Configuration
+      # Set these in Render Dashboard for security
+      - key: DATABASE_URL
+        sync: false  # Set manually in dashboard
+      - key: SESSION_SECRET
+        sync: false  # Set manually in dashboard
+    
+    # Auto-deploy settings
+    autoDeploy: true
+    
+    # Build settings
+    buildFilter:
+      paths:
+        - client/**
+        - server/**
+        - shared/**
+        - package.json
+        - package-lock.json
+        - tsconfig.json
+        - vite.config.ts
+        - drizzle.config.ts
+        - tailwind.config.ts
+        - postcss.config.js
+    
+    # Health check configuration
+    healthCheckPath: /api/health
+    
+    # Scaling configuration
+    numInstances: 1
+    
+    # Disk space (if needed for file uploads)
+    disk:
+      name: labmanager-disk
+      mountPath: /opt/render/project/uploads
+      sizeGB: 1
+
+# Database (if using Render PostgreSQL instead of Neon)
+# Uncomment if you want to use Render's managed PostgreSQL
+# databases:
+#   - name: labmanager-db
+#     databaseName: labmanager
+#     user: labmanager_user
+#     plan: starter  # Change to 'standard' or higher for production
+
+# Background Jobs (if needed in the future)
+# - type: worker
+#   name: labmanager-worker
+#   runtime: node
+#   buildCommand: npm ci
+#   startCommand: npm run worker
+#   envVars:
+#     - key: NODE_ENV
+#       value: production
+#     - key: DATABASE_URL
+#       sync: false
+
+# Static Site (if you want to serve frontend separately)
+# - type: static
+#   name: labmanager-frontend
+#   buildCommand: npm ci && npm run build
+#   staticPublishPath: ./dist/public
+#   pullRequestPreviewsEnabled: true
+#   buildFilter:
+#     paths:
+#       - client/**
+#       - shared/**
+#       - package.json
+#       - vite.config.ts
+#       - tailwind.config.ts
