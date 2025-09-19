@@ -4,7 +4,7 @@ services:
     name: labmanager
     runtime: node
     plan: starter  # Change to 'standard' or higher for production
-    buildCommand: npm ci && npm run build
+    buildCommand: npm install && npm run build
     startCommand: npm run start
     healthCheckPath: /
     
