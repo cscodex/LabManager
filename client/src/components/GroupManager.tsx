@@ -139,6 +139,52 @@ export function GroupManager() {
         </Dialog>
       </div>
 
+      {/* Manage Members Dialog */}
+      <Dialog open={showManageDialog} onOpenChange={setShowManageDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Manage Group Members</DialogTitle>
+            <DialogDescription>
+              Manage members for {selectedGroup?.name || 'this group'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {selectedGroup?.members && selectedGroup.members.length > 0 ? (
+              <div>
+                <h4 className="text-sm font-medium mb-3">Current Members ({selectedGroup.members.length}/{selectedGroup.maxMembers})</h4>
+                <div className="space-y-2">
+                  {selectedGroup.members.map((memberData) => {
+                    const member = memberData.student;
+                    return (
+                      <div key={member.id} className="flex items-center justify-between p-2 border rounded">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-6 w-6">
+                            <AvatarFallback className="text-xs">{member.firstName[0]}{member.lastName[0]}</AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm">{member.firstName} {member.lastName}</span>
+                        </div>
+                        <Badge variant="outline" className="text-xs">
+                          {selectedGroup.leaderId === member.id ? 'Leader' : 'Member'}
+                        </Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-muted-foreground py-4">
+                No members in this group
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowManageDialog(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Lab Filter */}
       <Card>
         <CardContent className="p-4">
@@ -371,11 +417,19 @@ function CreateGroupForm({
 
   // Helper functions to filter data based on selections
   const getAvailableStudents = () => {
+    console.log('🔍 getAvailableStudents called', { 
+      selectedClassId, 
+      enrollmentsCount: enrollments.length, 
+      studentsCount: students.length,
+      groupsCount: groups.length 
+    });
+    
     if (!selectedClassId) return [];
     
     // Get students enrolled in the selected class
     const classEnrollments = enrollments.filter(e => e.classId === selectedClassId && e.isActive);
     const enrolledStudentIds = classEnrollments.map(e => e.studentId);
+    console.log('📚 Class enrollments:', { classEnrollments: classEnrollments.length, enrolledStudentIds });
     
     // Get students already in groups for this class
     const studentsInGroups = new Set();
@@ -386,28 +440,41 @@ function CreateGroupForm({
         });
       }
     });
+    console.log('👥 Students in groups:', Array.from(studentsInGroups));
     
     // Return students enrolled in class but not in any group
-    return students.filter(student => 
+    const availableStudents = students.filter(student => 
       enrolledStudentIds.includes(student.id) && 
       student.role === 'student' &&
       !studentsInGroups.has(student.id)
     );
+    console.log('✅ Available students:', availableStudents);
+    return availableStudents;
   };
 
   const getAvailableComputers = () => {
+    console.log('💻 getAvailableComputers called', { 
+      selectedLabId, 
+      computersCount: computers.length,
+      groupsCount: groups.length 
+    });
+    
     if (!selectedLabId) return [];
     
     // Get computers in the selected lab
     const labComputers = computers.filter(c => c.labId === selectedLabId && c.isActive);
+    console.log('🏢 Lab computers:', { labComputers: labComputers.length, lab: selectedLabId });
     
     // Get computers already assigned to groups
     const assignedComputerIds = new Set(
       groups.filter(g => g.computerId).map(g => g.computerId)
     );
+    console.log('🔒 Assigned computers:', Array.from(assignedComputerIds));
     
     // Return unassigned computers from selected lab
-    return labComputers.filter(c => !assignedComputerIds.has(c.id));
+    const availableComputers = labComputers.filter(c => !assignedComputerIds.has(c.id));
+    console.log('✅ Available computers:', availableComputers);
+    return availableComputers;
   };
 
   const availableStudents = getAvailableStudents();
