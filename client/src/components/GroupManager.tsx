@@ -324,7 +324,7 @@ function CreateGroupForm({
       studentIds: [],
       leaderId: "",
       labId: "",
-      computerId: "",
+      computerId: "none",
       maxMembers: 4,
     }
   });
@@ -353,7 +353,7 @@ function CreateGroupForm({
       setSelectedLabId(watchedLabId);
       // Reset computer when lab changes
       if (selectedLabId && watchedLabId !== selectedLabId) {
-        form.setValue("computerId", "");
+        form.setValue("computerId", "none");
       }
     }
   }, [watchedLabId, selectedLabId, form]);
@@ -431,8 +431,8 @@ function CreateGroupForm({
       
       const response = await apiRequest("POST", "/api/groups", {
         ...data,
-        // Ensure computerId is null if empty
-        computerId: data.computerId || null
+        // Ensure computerId is null if "none" or empty
+        computerId: data.computerId && data.computerId !== "none" ? data.computerId : null
       });
       
       if (!response.ok) {
@@ -659,7 +659,7 @@ function CreateGroupForm({
                   field.onChange(value);
                   setSelectedLabId(value);
                   // Reset computer when lab changes
-                  form.setValue("computerId", "");
+                  form.setValue("computerId", "none");
                 }} 
                 value={field.value}
               >
@@ -699,7 +699,7 @@ function CreateGroupForm({
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="">No Computer</SelectItem>
+                    <SelectItem value="none">No Computer</SelectItem>
                     {availableComputers.map((computer) => (
                       <SelectItem key={computer.id} value={computer.id}>
                         {computer.name} {computer.specs && `- ${computer.specs}`}
