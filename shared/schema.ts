@@ -66,6 +66,8 @@ export const groups = pgTable("groups", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   classId: varchar("class_id").references(() => classes.id).notNull(),
+  leaderId: varchar("leader_id").references(() => users.id), // Group leader (student)
+  labId: varchar("lab_id").references(() => labs.id), // Lab assignment for group
   computerId: varchar("computer_id").references(() => computers.id),
   maxMembers: integer("max_members").default(4).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -311,8 +313,12 @@ export const insertComputerSchema = createInsertSchema(computers).pick({
 export const insertGroupSchema = createInsertSchema(groups).pick({
   name: true,
   classId: true,
+  leaderId: true,
+  labId: true,
   computerId: true,
   maxMembers: true,
+}).extend({
+  maxMembers: z.number().int().min(1).max(10),
 });
 
 export const insertEnrollmentSchema = createInsertSchema(enrollments).pick({
