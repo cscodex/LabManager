@@ -7,7 +7,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Users, Monitor, MapPin, Settings, Plus, UserPlus, MoreVertical } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Users, Monitor, MapPin, Settings, Plus, UserPlus, MoreVertical, Crown, X } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -98,6 +99,7 @@ export function GroupManager() {
   };
 
   const handleReassignComputer = (group: GroupWithDetails) => {
+    // This will be implemented with a separate dialog
     toast({
       title: "Feature coming soon",
       description: "Computer reassignment functionality will be available soon",
@@ -129,7 +131,7 @@ export function GroupManager() {
             <CreateGroupForm 
               onSuccess={() => setShowCreateDialog(false)}
               classes={classes}
-              computers={computers}
+              computers={computers} 
               labs={labs}
               students={students}
               enrollments={enrollments}
@@ -140,50 +142,16 @@ export function GroupManager() {
       </div>
 
       {/* Manage Members Dialog */}
-      <Dialog open={showManageDialog} onOpenChange={setShowManageDialog}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Manage Group Members</DialogTitle>
-            <DialogDescription>
-              Manage members for {selectedGroup?.name || 'this group'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {selectedGroup?.members && selectedGroup.members.length > 0 ? (
-              <div>
-                <h4 className="text-sm font-medium mb-3">Current Members ({selectedGroup.members.length}/{selectedGroup.maxMembers})</h4>
-                <div className="space-y-2">
-                  {selectedGroup.members.map((memberData) => {
-                    const member = memberData.student;
-                    return (
-                      <div key={member.id} className="flex items-center justify-between p-2 border rounded">
-                        <div className="flex items-center gap-2">
-                          <Avatar className="h-6 w-6">
-                            <AvatarFallback className="text-xs">{member.firstName[0]}{member.lastName[0]}</AvatarFallback>
-                          </Avatar>
-                          <span className="text-sm">{member.firstName} {member.lastName}</span>
-                        </div>
-                        <Badge variant="outline" className="text-xs">
-                          {selectedGroup.leaderId === member.id ? 'Leader' : 'Member'}
-                        </Badge>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              <div className="text-center text-muted-foreground py-4">
-                No members in this group
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowManageDialog(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {selectedGroup && (
+        <ManageMembersDialog 
+          group={selectedGroup}
+          open={showManageDialog}
+          onOpenChange={setShowManageDialog}
+          students={students}
+          enrollments={enrollments}
+          groups={groups}
+        />
+      )}
 
       {/* Lab Filter */}
       <Card>
@@ -778,5 +746,257 @@ function CreateGroupForm({
         </DialogFooter>
       </form>
     </Form>
+  );
+}
+
+// Manage Members Dialog Component  
+function ManageMembersDialog({
+  group,
+  open,
+  onOpenChange,
+  students,
+  enrollments,
+  groups
+}: {
+  group: GroupWithDetails;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  students: User[];
+  enrollments: Enrollment[];
+  groups: GroupWithDetails[];
+}) {
+  const [availableStudents, setAvailableStudents] = useState<User[]>([]);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  
+  // Get available students when dialog opens
+  useEffect(() => {
+    if (open && group) {
+      // Get students enrolled in the same class
+      const classEnrollments = enrollments.filter(e => e.classId === group.classId && e.isActive);
+      const enrolledStudentIds = classEnrollments.map(e => e.studentId);
+      
+      // Get students already in groups for this class (excluding current group)
+      const studentsInOtherGroups = new Set();
+      groups.forEach(g => {
+        if (g.id !== group.id && g.classId === group.classId && g.members) {
+          g.members.forEach(member => {
+            studentsInOtherGroups.add(member.student.id);
+          });
+        }
+      });
+      
+      // Get current group member IDs
+      const currentMemberIds = new Set(
+        group.members?.map(m => m.student.id) || []
+      );
+      
+      // Filter available students
+      const available = students.filter(student => 
+        enrolledStudentIds.includes(student.id) && 
+        student.role === 'student' &&
+        !studentsInOtherGroups.has(student.id) &&
+        !currentMemberIds.has(student.id)
+      );
+      
+      setAvailableStudents(available);
+    }
+  }, [open, group, students, enrollments, groups]);
+
+  // Mutations
+  const addMemberMutation = useMutation({
+    mutationFn: async (studentId: string) => {
+      const response = await apiRequest(`/api/groups/${group.id}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ studentId })
+      });
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/groups/details'] });
+      toast({ 
+        title: "Success", 
+        description: "Member added successfully" 
+      });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to add member",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  const removeMemberMutation = useMutation({
+    mutationFn: async (studentId: string) => {
+      const response = await apiRequest(`/api/groups/${group.id}/members/${studentId}`, {
+        method: 'DELETE'
+      });
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/groups/details'] });
+      toast({ 
+        title: "Success", 
+        description: "Member removed successfully" 
+      });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to remove member",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  const reassignLeaderMutation = useMutation({
+    mutationFn: async (newLeaderId: string) => {
+      const response = await apiRequest(`/api/groups/${group.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ leaderId: newLeaderId })
+      });
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/groups/details'] });
+      toast({ 
+        title: "Success", 
+        description: "Leader reassigned successfully" 
+      });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to reassign leader",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Manage Group Members</DialogTitle>
+          <DialogDescription>
+            Manage members for {group.name}
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="space-y-6">
+          {/* Current Members */}
+          <div>
+            <h4 className="text-sm font-medium mb-3">
+              Current Members ({group.members?.length || 0}/{group.maxMembers})
+            </h4>
+            {!group.members || group.members.length === 0 ? (
+              <div className="text-center text-muted-foreground py-4 border rounded">
+                No members in this group
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {group.members.map((memberData) => {
+                  const member = memberData.student;
+                  const isLeader = group.leaderId === member.id;
+                  return (
+                    <div 
+                      key={member.id} 
+                      className="flex items-center justify-between p-3 border rounded hover:bg-muted/50"
+                      data-testid={`member-item-${member.id}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback className="text-xs">
+                            {member.firstName[0]}{member.lastName[0]}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <span className="font-medium text-sm">
+                            {member.firstName} {member.lastName}
+                          </span>
+                          {isLeader && (
+                            <Badge variant="default" className="ml-2 text-xs">
+                              Leader
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {!isLeader && group.members && group.members.length > 1 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => reassignLeaderMutation.mutate(member.id)}
+                            disabled={reassignLeaderMutation.isPending}
+                            data-testid={`button-make-leader-${member.id}`}
+                          >
+                            <Crown className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeMemberMutation.mutate(member.id)}
+                          disabled={removeMemberMutation.isPending || (group.members?.length === 1)}
+                          data-testid={`button-remove-${member.id}`}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Add Members */}
+          {availableStudents.length > 0 && (group.members?.length || 0) < group.maxMembers && (
+            <div>
+              <h4 className="text-sm font-medium mb-3">
+                Available Students
+              </h4>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {availableStudents.map((student) => (
+                  <div 
+                    key={student.id} 
+                    className="flex items-center justify-between p-2 border rounded hover:bg-muted/50"
+                    data-testid={`available-student-${student.id}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-6 w-6">
+                        <AvatarFallback className="text-xs">
+                          {student.firstName[0]}{student.lastName[0]}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="text-sm">
+                        {student.firstName} {student.lastName}
+                      </span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => addMemberMutation.mutate(student.id)}
+                      disabled={addMemberMutation.isPending}
+                      data-testid={`button-add-${student.id}`}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
