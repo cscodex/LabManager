@@ -319,6 +319,7 @@ export const insertGroupSchema = createInsertSchema(groups).pick({
   maxMembers: true,
 }).extend({
   maxMembers: z.number().int().min(1).max(10),
+  studentIds: z.array(z.string()).min(1, "At least one student must be selected").optional(),
 });
 
 export const insertEnrollmentSchema = createInsertSchema(enrollments).pick({

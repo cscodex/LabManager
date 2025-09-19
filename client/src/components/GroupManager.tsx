@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Users, Monitor, MapPin, Settings, Plus, UserPlus, MoreVertical } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -335,31 +335,39 @@ function CreateGroupForm({
   const watchedStudentIds = form.watch("studentIds");
   const watchedMaxMembers = form.watch("maxMembers");
 
-  // Update local state when form values change
-  if (watchedClassId !== selectedClassId) {
-    setSelectedClassId(watchedClassId);
-    // Reset dependent fields when class changes
-    if (selectedClassId && watchedClassId !== selectedClassId) {
-      form.setValue("studentIds", []);
-      form.setValue("leaderId", "");
-      setSelectedStudentIds([]);
+  // Update local state when form values change - moved to useEffect to prevent render loops
+  useEffect(() => {
+    if (watchedClassId !== selectedClassId) {
+      setSelectedClassId(watchedClassId);
+      // Reset dependent fields when class changes
+      if (selectedClassId && watchedClassId !== selectedClassId) {
+        form.setValue("studentIds", []);
+        form.setValue("leaderId", "");
+        setSelectedStudentIds([]);
+      }
     }
-  }
-  if (watchedLabId !== selectedLabId) {
-    setSelectedLabId(watchedLabId);
-    // Reset computer when lab changes
-    if (selectedLabId && watchedLabId !== selectedLabId) {
-      form.setValue("computerId", "");
+  }, [watchedClassId, selectedClassId, form]);
+
+  useEffect(() => {
+    if (watchedLabId !== selectedLabId) {
+      setSelectedLabId(watchedLabId);
+      // Reset computer when lab changes
+      if (selectedLabId && watchedLabId !== selectedLabId) {
+        form.setValue("computerId", "");
+      }
     }
-  }
-  if (JSON.stringify(watchedStudentIds) !== JSON.stringify(selectedStudentIds)) {
-    setSelectedStudentIds(watchedStudentIds);
-    // Reset leader if not in selected students
-    const currentLeader = form.getValues("leaderId");
-    if (currentLeader && !watchedStudentIds.includes(currentLeader)) {
-      form.setValue("leaderId", "");
+  }, [watchedLabId, selectedLabId, form]);
+
+  useEffect(() => {
+    if (JSON.stringify(watchedStudentIds) !== JSON.stringify(selectedStudentIds)) {
+      setSelectedStudentIds(watchedStudentIds);
+      // Reset leader if not in selected students
+      const currentLeader = form.getValues("leaderId");
+      if (currentLeader && !watchedStudentIds.includes(currentLeader)) {
+        form.setValue("leaderId", "");
+      }
     }
-  }
+  }, [watchedStudentIds, selectedStudentIds, form]);
 
   // Helper functions to filter data based on selections
   const getAvailableStudents = () => {
@@ -426,6 +434,12 @@ function CreateGroupForm({
         // Ensure computerId is null if empty
         computerId: data.computerId || null
       });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to create group");
+      }
+      
       return await response.json();
     },
     onSuccess: () => {

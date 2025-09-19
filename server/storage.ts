@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import * as bcrypt from "bcrypt";
 import * as schema from "@shared/schema";
 import session from "express-session";
@@ -73,6 +73,7 @@ export interface IStorage {
   getGroupsByClass(classId: string): Promise<Group[]>;
   getGroup(id: string): Promise<Group | undefined>;
   createGroup(group: InsertGroup): Promise<Group>;
+  createGroupWithStudents(group: InsertGroup, studentIds: string[]): Promise<Group>;
   updateGroup(id: string, group: Partial<InsertGroup>): Promise<Group | undefined>;
   deleteGroup(id: string): Promise<boolean>;
   
@@ -484,6 +485,99 @@ export class DatabaseStorage implements IStorage {
   async createGroup(group: InsertGroup): Promise<Group> {
     const result = await db.insert(schema.groups).values(group).returning();
     return result[0];
+  }
+
+  async createGroupWithStudents(group: InsertGroup, studentIds: string[]): Promise<Group> {
+    return await db.transaction(async (tx) => {
+      // Server-side validations
+      if (studentIds && studentIds.length > 0) {
+        // Check if any students are already in groups
+        const existingGroupEnrollments = await tx.query.enrollments.findMany({
+          where: and(
+            eq(schema.enrollments.classId, group.classId),
+            eq(schema.enrollments.isActive, true),
+            // Check if any of the student IDs already have a groupId
+            sql`${schema.enrollments.studentId} = ANY(${studentIds}) AND ${schema.enrollments.groupId} IS NOT NULL`
+          )
+        });
+        
+        if (existingGroupEnrollments.length > 0) {
+          throw new Error("Some students are already assigned to groups");
+        }
+        
+        // Validate student enrollment and count
+        const validEnrollments = await tx.query.enrollments.findMany({
+          where: and(
+            eq(schema.enrollments.classId, group.classId),
+            eq(schema.enrollments.isActive, true),
+            sql`${schema.enrollments.studentId} = ANY(${studentIds})`
+          )
+        });
+        
+        if (validEnrollments.length !== studentIds.length) {
+          throw new Error("Some students are not enrolled in this class");
+        }
+        
+        // Validate max members
+        if (studentIds.length > group.maxMembers) {
+          throw new Error(`Too many students selected. Maximum allowed: ${group.maxMembers}`);
+        }
+        
+        // Validate leader is in selected students
+        if (group.leaderId && !studentIds.includes(group.leaderId)) {
+          throw new Error("Group leader must be one of the selected students");
+        }
+      }
+      
+      // Validate computer belongs to selected lab and is available
+      if (group.computerId && group.labId) {
+        const computer = await tx.query.computers.findFirst({
+          where: and(
+            eq(schema.computers.id, group.computerId),
+            eq(schema.computers.labId, group.labId),
+            eq(schema.computers.isActive, true)
+          )
+        });
+        
+        if (!computer) {
+          throw new Error("Computer not found or not available in selected lab");
+        }
+        
+        // Check if computer is already assigned to another group
+        const existingGroupWithComputer = await tx.query.groups.findFirst({
+          where: eq(schema.groups.computerId, group.computerId)
+        });
+        
+        if (existingGroupWithComputer) {
+          throw new Error("Computer is already assigned to another group");
+        }
+      }
+      
+      // Create the group
+      const [createdGroup] = await tx.insert(schema.groups).values(group).returning();
+      
+      // Assign students to group atomically if provided
+      if (studentIds && studentIds.length > 0) {
+        const updateResult = await tx.update(schema.enrollments)
+          .set({ groupId: createdGroup.id })
+          .where(
+            and(
+              sql`${schema.enrollments.studentId} = ANY(${studentIds})`,
+              eq(schema.enrollments.classId, group.classId),
+              eq(schema.enrollments.isActive, true),
+              sql`${schema.enrollments.groupId} IS NULL`
+            )
+          )
+          .returning();
+          
+        // Verify all students were assigned
+        if (updateResult.length !== studentIds.length) {
+          throw new Error("Failed to assign all students to group");
+        }
+      }
+      
+      return createdGroup;
+    });
   }
 
   async updateGroup(id: string, group: Partial<InsertGroup>): Promise<Group | undefined> {

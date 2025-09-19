@@ -328,7 +328,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/groups', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const validatedData = insertGroupSchema.parse(req.body);
-      const group = await storage.createGroup(validatedData);
+      const { studentIds, ...groupData } = validatedData;
+      
+      let group;
+      if (studentIds && studentIds.length > 0) {
+        // Create group with student assignments
+        group = await storage.createGroupWithStudents(groupData, studentIds);
+      } else {
+        // Create group without students
+        group = await storage.createGroup(groupData);
+      }
+      
       res.status(201).json(group);
     } catch (error: any) {
       if (error.name === 'ZodError') {
