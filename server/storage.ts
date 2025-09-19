@@ -597,6 +597,102 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0;
   }
 
+  async getGroupsWithDetails(): Promise<any[]> {
+    try {
+      // Get all groups
+      const groups = await db.query.groups.findMany();
+      
+      const groupsWithDetails = await Promise.all(
+        groups.map(async (group) => {
+          // Get class information
+          const classInfo = await db.query.classes.findFirst({
+            where: eq(schema.classes.id, group.classId),
+          });
+          
+          // Get lab information
+          let labInfo = null;
+          if (group.labId) {
+            labInfo = await db.query.labs.findFirst({
+              where: eq(schema.labs.id, group.labId),
+            });
+          }
+          
+          // Get computer information
+          let computerInfo = null;
+          if (group.computerId) {
+            computerInfo = await db.query.computers.findFirst({
+              where: eq(schema.computers.id, group.computerId),
+            });
+          }
+          
+          // Get instructor information
+          let instructorInfo = null;
+          if (classInfo && classInfo.instructorId) {
+            const instructor = await db.query.users.findFirst({
+              where: eq(schema.users.id, classInfo.instructorId),
+            });
+            // Remove password for security
+            if (instructor) {
+              instructorInfo = {
+                id: instructor.id,
+                firstName: instructor.firstName,
+                lastName: instructor.lastName,
+                email: instructor.email,
+                role: instructor.role
+              };
+            }
+          }
+          
+          // Get group members (enrollments + student details)
+          const enrollments = await db.query.enrollments.findMany({
+            where: and(
+              eq(schema.enrollments.groupId, group.id),
+              eq(schema.enrollments.isActive, true)
+            ),
+          });
+          
+          const members = await Promise.all(
+            enrollments.map(async (enrollment) => {
+              const student = await db.query.users.findFirst({
+                where: eq(schema.users.id, enrollment.studentId),
+              });
+              // Remove password for security
+              const sanitizedStudent = student ? {
+                id: student.id,
+                firstName: student.firstName,
+                lastName: student.lastName,
+                email: student.email,
+                role: student.role,
+                gradeLevel: student.gradeLevel,
+                tradeType: student.tradeType,
+                section: student.section
+              } : null;
+              
+              return {
+                enrollment,
+                student: sanitizedStudent
+              };
+            })
+          );
+          
+          return {
+            ...group,
+            class: classInfo,
+            lab: labInfo,
+            computer: computerInfo,
+            instructor: instructorInfo,
+            members
+          };
+        })
+      );
+      
+      return groupsWithDetails;
+    } catch (error) {
+      console.error('Error in getGroupsWithDetails:', error);
+      throw error;
+    }
+  }
+
   // Enrollments
   async getEnrollmentsByClass(classId: string): Promise<Enrollment[]> {
     return await db.query.enrollments.findMany({
