@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, not } from "drizzle-orm";
 import * as bcrypt from "bcrypt";
 import * as schema from "@shared/schema";
 import session from "express-session";
@@ -599,6 +599,100 @@ export class DatabaseStorage implements IStorage {
       .returning();
     
     return result.length > 0;
+  }
+
+  async addGroupMember(groupId: string, studentId: string): Promise<boolean> {
+    // First get the group to check class and max members
+    const group = await this.getGroup(groupId);
+    if (!group) {
+      throw new Error('Group not found');
+    }
+
+    // Check if student is enrolled in the same class
+    const enrollment = await db.query.enrollments.findFirst({
+      where: and(
+        eq(schema.enrollments.studentId, studentId),
+        eq(schema.enrollments.classId, group.classId),
+        eq(schema.enrollments.isActive, true)
+      )
+    });
+
+    if (!enrollment) {
+      throw new Error('Student is not enrolled in this class');
+    }
+
+    // Check if student is already in a group for this class
+    if (enrollment.groupId) {
+      throw new Error('Student is already in a group for this class');
+    }
+
+    // Check current group size
+    const currentMembers = await db.query.enrollments.findMany({
+      where: and(
+        eq(schema.enrollments.groupId, groupId),
+        eq(schema.enrollments.isActive, true)
+      )
+    });
+
+    if (currentMembers.length >= group.maxMembers) {
+      throw new Error('Group is at maximum capacity');
+    }
+
+    // Add student to group
+    await db.update(schema.enrollments)
+      .set({ groupId: groupId })
+      .where(eq(schema.enrollments.id, enrollment.id));
+
+    return true;
+  }
+
+  async removeGroupMember(groupId: string, studentId: string): Promise<boolean> {
+    // First get the group to check if student is the leader
+    const group = await this.getGroup(groupId);
+    if (!group) {
+      throw new Error('Group not found');
+    }
+
+    // Find the enrollment record
+    const enrollment = await db.query.enrollments.findFirst({
+      where: and(
+        eq(schema.enrollments.studentId, studentId),
+        eq(schema.enrollments.groupId, groupId),
+        eq(schema.enrollments.isActive, true)
+      )
+    });
+
+    if (!enrollment) {
+      throw new Error('Student is not in this group');
+    }
+
+    // Check if student is the leader - if so, we need to reassign leadership or prevent removal
+    if (group.leaderId === studentId) {
+      // Count remaining members
+      const otherMembers = await db.query.enrollments.findMany({
+        where: and(
+          eq(schema.enrollments.groupId, groupId),
+          eq(schema.enrollments.isActive, true),
+          not(eq(schema.enrollments.studentId, studentId))
+        )
+      });
+
+      if (otherMembers.length === 0) {
+        // This is the last member, allow removal but clear leader
+        await db.update(schema.groups)
+          .set({ leaderId: null })
+          .where(eq(schema.groups.id, groupId));
+      } else {
+        throw new Error('Cannot remove group leader. Please reassign leadership first.');
+      }
+    }
+
+    // Remove student from group
+    await db.update(schema.enrollments)
+      .set({ groupId: null })
+      .where(eq(schema.enrollments.id, enrollment.id));
+
+    return true;
   }
 
   async getGroupsWithDetails(): Promise<any[]> {

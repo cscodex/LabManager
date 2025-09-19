@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Users, Monitor, MapPin, Settings, Plus, UserPlus, MoreVertical, Crown, X } from "lucide-react";
 import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -806,9 +806,8 @@ function ManageMembersDialog({
   // Mutations
   const addMemberMutation = useMutation({
     mutationFn: async (studentId: string) => {
-      const response = await apiRequest(`/api/groups/${group.id}/members`, {
-        method: 'POST',
-        body: JSON.stringify({ studentId })
+      const response = await apiRequest(`/api/groups/${group.id}/members`, 'POST', {
+        studentId
       });
       return response;
     },
@@ -830,9 +829,7 @@ function ManageMembersDialog({
 
   const removeMemberMutation = useMutation({
     mutationFn: async (studentId: string) => {
-      const response = await apiRequest(`/api/groups/${group.id}/members/${studentId}`, {
-        method: 'DELETE'
-      });
+      const response = await apiRequest(`/api/groups/${group.id}/members/${studentId}`, 'DELETE');
       return response;
     },
     onSuccess: () => {
@@ -853,9 +850,8 @@ function ManageMembersDialog({
 
   const reassignLeaderMutation = useMutation({
     mutationFn: async (newLeaderId: string) => {
-      const response = await apiRequest(`/api/groups/${group.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ leaderId: newLeaderId })
+      const response = await apiRequest(`/api/groups/${group.id}`, 'PATCH', {
+        leaderId: newLeaderId
       });
       return response;
     },

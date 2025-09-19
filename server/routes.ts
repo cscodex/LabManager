@@ -408,6 +408,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Group member management endpoints
+  app.post('/api/groups/:id/members', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      const { studentId } = req.body;
+      
+      if (!studentId) {
+        return res.status(400).json({ error: 'Student ID is required' });
+      }
+
+      await storage.addGroupMember(req.params.id, studentId);
+      res.json({ message: 'Member added successfully' });
+    } catch (error: any) {
+      console.error('Error adding group member:', error);
+      res.status(400).json({ error: error.message || 'Failed to add member' });
+    }
+  });
+
+  app.delete('/api/groups/:id/members/:studentId', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      await storage.removeGroupMember(req.params.id, req.params.studentId);
+      res.json({ message: 'Member removed successfully' });
+    } catch (error: any) {
+      console.error('Error removing group member:', error);
+      res.status(400).json({ error: error.message || 'Failed to remove member' });
+    }
+  });
+
   // Students Management - Get all students (instructors) or current student info (students)
   app.get('/api/students', requireAuth, async (req, res) => {
     try {
