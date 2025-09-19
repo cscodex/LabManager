@@ -315,6 +315,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Groups Management
+  app.get('/api/groups', requireAuth, async (req, res) => {
+    try {
+      const groups = await storage.getAllGroups();
+      res.json(groups);
+    } catch (error: any) {
+      console.error('Error fetching groups:', error);
+      res.status(500).json({ error: 'Failed to fetch groups' });
+    }
+  });
+
   app.get('/api/groups/details', requireAuth, async (req, res) => {
     try {
       const groupsWithDetails = await storage.getGroupsWithDetails();

@@ -470,6 +470,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Groups
+  async getAllGroups(): Promise<Group[]> {
+    return await db.query.groups.findMany();
+  }
+
   async getGroupsByClass(classId: string): Promise<Group[]> {
     return await db.query.groups.findMany({
       where: eq(schema.groups.classId, classId),

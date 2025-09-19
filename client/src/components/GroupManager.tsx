@@ -417,19 +417,11 @@ function CreateGroupForm({
 
   // Helper functions to filter data based on selections
   const getAvailableStudents = () => {
-    console.log('🔍 getAvailableStudents called', { 
-      selectedClassId, 
-      enrollmentsCount: enrollments.length, 
-      studentsCount: students.length,
-      groupsCount: groups.length 
-    });
-    
     if (!selectedClassId) return [];
     
     // Get students enrolled in the selected class
     const classEnrollments = enrollments.filter(e => e.classId === selectedClassId && e.isActive);
     const enrolledStudentIds = classEnrollments.map(e => e.studentId);
-    console.log('📚 Class enrollments:', { classEnrollments: classEnrollments.length, enrolledStudentIds });
     
     // Get students already in groups for this class
     const studentsInGroups = new Set();
@@ -440,41 +432,28 @@ function CreateGroupForm({
         });
       }
     });
-    console.log('👥 Students in groups:', Array.from(studentsInGroups));
     
     // Return students enrolled in class but not in any group
-    const availableStudents = students.filter(student => 
+    return students.filter(student => 
       enrolledStudentIds.includes(student.id) && 
       student.role === 'student' &&
       !studentsInGroups.has(student.id)
     );
-    console.log('✅ Available students:', availableStudents);
-    return availableStudents;
   };
 
   const getAvailableComputers = () => {
-    console.log('💻 getAvailableComputers called', { 
-      selectedLabId, 
-      computersCount: computers.length,
-      groupsCount: groups.length 
-    });
-    
     if (!selectedLabId) return [];
     
     // Get computers in the selected lab
     const labComputers = computers.filter(c => c.labId === selectedLabId && c.isActive);
-    console.log('🏢 Lab computers:', { labComputers: labComputers.length, lab: selectedLabId });
     
     // Get computers already assigned to groups
     const assignedComputerIds = new Set(
       groups.filter(g => g.computerId).map(g => g.computerId)
     );
-    console.log('🔒 Assigned computers:', Array.from(assignedComputerIds));
     
     // Return unassigned computers from selected lab
-    const availableComputers = labComputers.filter(c => !assignedComputerIds.has(c.id));
-    console.log('✅ Available computers:', availableComputers);
-    return availableComputers;
+    return labComputers.filter(c => !assignedComputerIds.has(c.id));
   };
 
   const availableStudents = getAvailableStudents();
