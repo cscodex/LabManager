@@ -21,8 +21,17 @@ import type { Group, Class, Lab, Computer, User, Enrollment } from "@shared/sche
 const createGroupSchema = z.object({
   name: z.string().min(1, "Group name is required"),
   classId: z.string().min(1, "Please select a class"),
+  studentIds: z.array(z.string()).min(1, "At least one student must be selected"),
+  leaderId: z.string().min(1, "Please select a group leader"),
+  labId: z.string().min(1, "Please select a lab"),
   computerId: z.string().optional(),
   maxMembers: z.number().min(1, "Must allow at least 1 member").max(10, "Maximum 10 members"),
+}).refine((data) => data.studentIds.length <= data.maxMembers, {
+  message: "Number of selected students cannot exceed max members",
+  path: ["studentIds"]
+}).refine((data) => data.studentIds.includes(data.leaderId), {
+  message: "Group leader must be one of the selected students",
+  path: ["leaderId"]
 });
 
 type CreateGroupFormData = z.infer<typeof createGroupSchema>;
@@ -64,6 +73,16 @@ export function GroupManager() {
   // Fetch computers for group assignment
   const { data: computers = [] } = useQuery<Computer[]>({
     queryKey: ['/api/computers']
+  });
+
+  // Fetch students for group creation
+  const { data: students = [] } = useQuery<User[]>({
+    queryKey: ['/api/students']
+  });
+
+  // Fetch enrollments to determine available students
+  const { data: enrollments = [] } = useQuery<Enrollment[]>({
+    queryKey: ['/api/enrollments']
   });
 
   const filteredGroups = selectedLab === "all" 
@@ -111,6 +130,10 @@ export function GroupManager() {
               onSuccess={() => setShowCreateDialog(false)}
               classes={classes}
               computers={computers}
+              labs={labs}
+              students={students}
+              enrollments={enrollments}
+              groups={groups}
             />
           </DialogContent>
         </Dialog>
@@ -274,12 +297,23 @@ export function GroupManager() {
 function CreateGroupForm({ 
   onSuccess, 
   classes, 
-  computers 
+  computers,
+  labs,
+  students,
+  enrollments,
+  groups
 }: {
   onSuccess: () => void;
   classes: Class[];
   computers: Computer[];
+  labs: Lab[];
+  students: User[];
+  enrollments: Enrollment[];
+  groups: GroupWithDetails[];
 }) {
+  const [selectedClassId, setSelectedClassId] = useState<string>("");
+  const [selectedLabId, setSelectedLabId] = useState<string>("");
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const { toast } = useToast();
   
   const form = useForm<CreateGroupFormData>({
@@ -287,14 +321,111 @@ function CreateGroupForm({
     defaultValues: {
       name: "",
       classId: "",
+      studentIds: [],
+      leaderId: "",
+      labId: "",
       computerId: "",
       maxMembers: 4,
     }
   });
 
+  // Watch form values for dynamic filtering
+  const watchedClassId = form.watch("classId");
+  const watchedLabId = form.watch("labId");
+  const watchedStudentIds = form.watch("studentIds");
+  const watchedMaxMembers = form.watch("maxMembers");
+
+  // Update local state when form values change
+  if (watchedClassId !== selectedClassId) {
+    setSelectedClassId(watchedClassId);
+    // Reset dependent fields when class changes
+    if (selectedClassId && watchedClassId !== selectedClassId) {
+      form.setValue("studentIds", []);
+      form.setValue("leaderId", "");
+      setSelectedStudentIds([]);
+    }
+  }
+  if (watchedLabId !== selectedLabId) {
+    setSelectedLabId(watchedLabId);
+    // Reset computer when lab changes
+    if (selectedLabId && watchedLabId !== selectedLabId) {
+      form.setValue("computerId", "");
+    }
+  }
+  if (JSON.stringify(watchedStudentIds) !== JSON.stringify(selectedStudentIds)) {
+    setSelectedStudentIds(watchedStudentIds);
+    // Reset leader if not in selected students
+    const currentLeader = form.getValues("leaderId");
+    if (currentLeader && !watchedStudentIds.includes(currentLeader)) {
+      form.setValue("leaderId", "");
+    }
+  }
+
+  // Helper functions to filter data based on selections
+  const getAvailableStudents = () => {
+    if (!selectedClassId) return [];
+    
+    // Get students enrolled in the selected class
+    const classEnrollments = enrollments.filter(e => e.classId === selectedClassId && e.isActive);
+    const enrolledStudentIds = classEnrollments.map(e => e.studentId);
+    
+    // Get students already in groups for this class
+    const studentsInGroups = new Set();
+    groups.forEach(group => {
+      if (group.classId === selectedClassId && group.members) {
+        group.members.forEach(member => {
+          studentsInGroups.add(member.student.id);
+        });
+      }
+    });
+    
+    // Return students enrolled in class but not in any group
+    return students.filter(student => 
+      enrolledStudentIds.includes(student.id) && 
+      student.role === 'student' &&
+      !studentsInGroups.has(student.id)
+    );
+  };
+
+  const getAvailableComputers = () => {
+    if (!selectedLabId) return [];
+    
+    // Get computers in the selected lab
+    const labComputers = computers.filter(c => c.labId === selectedLabId && c.isActive);
+    
+    // Get computers already assigned to groups
+    const assignedComputerIds = new Set(
+      groups.filter(g => g.computerId).map(g => g.computerId)
+    );
+    
+    // Return unassigned computers from selected lab
+    return labComputers.filter(c => !assignedComputerIds.has(c.id));
+  };
+
+  const availableStudents = getAvailableStudents();
+  const availableComputers = getAvailableComputers();
+
+  // Check if group name is unique within the selected class
+  const isGroupNameUnique = (name: string) => {
+    if (!selectedClassId || !name) return true;
+    return !groups.some(g => 
+      g.classId === selectedClassId && 
+      g.name.toLowerCase() === name.toLowerCase()
+    );
+  };
+
   const createGroupMutation = useMutation({
     mutationFn: async (data: CreateGroupFormData) => {
-      const response = await apiRequest("POST", "/api/groups", data);
+      // Validate group name uniqueness
+      if (!isGroupNameUnique(data.name)) {
+        throw new Error("Group name already exists in this class");
+      }
+      
+      const response = await apiRequest("POST", "/api/groups", {
+        ...data,
+        // Ensure computerId is null if empty
+        computerId: data.computerId || null
+      });
       return await response.json();
     },
     onSuccess: () => {
@@ -321,28 +452,54 @@ function CreateGroupForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 max-h-[70vh] overflow-y-auto">
+        {/* Group Name */}
         <FormField
           control={form.control}
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Group Name</FormLabel>
+              <FormLabel>Group Name *</FormLabel>
               <FormControl>
-                <Input {...field} placeholder="e.g., Group 1" data-testid="input-group-name" />
+                <Input 
+                  {...field} 
+                  placeholder="e.g., Group Alpha" 
+                  data-testid="input-group-name"
+                  onChange={(e) => {
+                    field.onChange(e);
+                    // Clear error if name becomes unique
+                    if (isGroupNameUnique(e.target.value)) {
+                      form.clearErrors("name");
+                    }
+                  }}
+                />
               </FormControl>
+              {field.value && !isGroupNameUnique(field.value) && (
+                <p className="text-sm text-destructive">This group name already exists in the selected class</p>
+              )}
               <FormMessage />
             </FormItem>
           )}
         />
         
+        {/* Class Selection */}
         <FormField
           control={form.control}
           name="classId"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Class</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
+              <FormLabel>Class *</FormLabel>
+              <Select 
+                onValueChange={(value) => {
+                  field.onChange(value);
+                  setSelectedClassId(value);
+                  // Reset dependent fields
+                  form.setValue("studentIds", []);
+                  form.setValue("leaderId", "");
+                  setSelectedStudentIds([]);
+                }} 
+                defaultValue={field.value}
+              >
                 <FormControl>
                   <SelectTrigger data-testid="select-group-class">
                     <SelectValue placeholder="Select a class" />
@@ -361,38 +518,13 @@ function CreateGroupForm({
           )}
         />
 
-        <FormField
-          control={form.control}
-          name="computerId"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Computer (Optional)</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
-                <FormControl>
-                  <SelectTrigger data-testid="select-group-computer">
-                    <SelectValue placeholder="Select a computer" />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="none">No Computer</SelectItem>
-                  {computers.map((computer) => (
-                    <SelectItem key={computer.id} value={computer.id}>
-                      {computer.name} - {computer.specs}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
+        {/* Max Members */}
         <FormField
           control={form.control}
           name="maxMembers"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Maximum Members</FormLabel>
+              <FormLabel>Maximum Members *</FormLabel>
               <FormControl>
                 <Input 
                   {...field} 
@@ -407,6 +539,165 @@ function CreateGroupForm({
             </FormItem>
           )}
         />
+
+        {/* Student Multi-Select */}
+        {selectedClassId && (
+          <FormField
+            control={form.control}
+            name="studentIds"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Select Students * ({availableStudents.length} available)</FormLabel>
+                <div className="text-sm text-muted-foreground mb-2">
+                  Select up to {watchedMaxMembers} students from this class who are not in any group yet
+                </div>
+                <div className="space-y-2 max-h-32 overflow-y-auto border rounded-md p-2">
+                  {availableStudents.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No available students in this class</p>
+                  ) : (
+                    availableStudents.map((student) => (
+                      <label
+                        key={student.id}
+                        className="flex items-center space-x-2 cursor-pointer hover:bg-muted/50 p-1 rounded"
+                        data-testid={`checkbox-student-${student.id}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={field.value?.includes(student.id) || false}
+                          onChange={(e) => {
+                            const currentIds = field.value || [];
+                            if (e.target.checked) {
+                              if (currentIds.length < watchedMaxMembers) {
+                                field.onChange([...currentIds, student.id]);
+                              }
+                            } else {
+                              field.onChange(currentIds.filter(id => id !== student.id));
+                            }
+                          }}
+                          disabled={
+                            !field.value?.includes(student.id) && 
+                            (field.value?.length || 0) >= watchedMaxMembers
+                          }
+                          className="rounded"
+                        />
+                        <div className="flex items-center space-x-2">
+                          <Avatar className="h-6 w-6">
+                            <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                              {student.firstName[0]}{student.lastName[0]}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm">
+                            {student.firstName} {student.lastName}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            ({student.email})
+                          </span>
+                        </div>
+                      </label>
+                    ))
+                  )}
+                </div>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
+
+        {/* Group Leader Selection */}
+        {selectedStudentIds.length > 0 && (
+          <FormField
+            control={form.control}
+            name="leaderId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Group Leader *</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger data-testid="select-group-leader">
+                      <SelectValue placeholder="Select a group leader" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {availableStudents
+                      .filter(student => selectedStudentIds.includes(student.id))
+                      .map((student) => (
+                        <SelectItem key={student.id} value={student.id}>
+                          {student.firstName} {student.lastName}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
+
+        {/* Lab Selection */}
+        <FormField
+          control={form.control}
+          name="labId"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Lab *</FormLabel>
+              <Select 
+                onValueChange={(value) => {
+                  field.onChange(value);
+                  setSelectedLabId(value);
+                  // Reset computer when lab changes
+                  form.setValue("computerId", "");
+                }} 
+                value={field.value}
+              >
+                <FormControl>
+                  <SelectTrigger data-testid="select-group-lab">
+                    <SelectValue placeholder="Select a lab" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  {labs.map((lab) => (
+                    <SelectItem key={lab.id} value={lab.id}>
+                      {lab.name} - {lab.location}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {/* Computer Selection */}
+        {selectedLabId && (
+          <FormField
+            control={form.control}
+            name="computerId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Computer (Optional)</FormLabel>
+                <div className="text-sm text-muted-foreground mb-2">
+                  {availableComputers.length} unassigned computers available in {labs.find(l => l.id === selectedLabId)?.name}
+                </div>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger data-testid="select-group-computer">
+                      <SelectValue placeholder="Select a computer" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="">No Computer</SelectItem>
+                    {availableComputers.map((computer) => (
+                      <SelectItem key={computer.id} value={computer.id}>
+                        {computer.name} {computer.specs && `- ${computer.specs}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
 
         <DialogFooter>
           <Button
