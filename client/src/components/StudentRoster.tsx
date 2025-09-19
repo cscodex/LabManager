@@ -152,43 +152,29 @@ export function StudentRoster() {
   const hasError = studentsError || enrollmentsError;
 
   // Filter students based on search term and filters
-  const filteredEnrollments = enrollments.filter((enrollment: EnrollmentWithDetails) => {
-    const student = enrollment.student;
-    const className = enrollment.class?.displayName || '';
-    const labName = enrollment.lab?.name || '';
-    const groupName = enrollment.group?.name || '';
-    
+  const filteredStudents = students.filter((student: User) => {
     // Search filter
-    const searchString = `${student?.firstName || ''} ${student?.lastName || ''} ${student?.email || ''} ${student?.id || ''} ${className} ${groupName} ${labName}`;
+    const searchString = `${student.firstName || ''} ${student.lastName || ''} ${student.email || ''} ${student.id || ''}`;
     const matchesSearch = searchString.toLowerCase().includes(searchTerm.toLowerCase());
     
-    // Class filter
-    const matchesClass = filterClass === 'all' || enrollment.classId === filterClass;
+    // Grade level filter (for student properties)
+    const matchesGrade = filterGrade === 'all' || student.gradeLevel?.toString() === filterGrade;
     
-    // Lab filter  
-    const matchesLab = filterLab === 'all' || enrollment.lab?.name === filterLab;
+    // Trade type filter (for student properties)
+    const matchesTrade = filterTrade === 'all' || student.tradeType === filterTrade;
     
-    // Group filter
-    const matchesGroup = filterGroup === 'all' || enrollment.group?.name === filterGroup;
+    // Section filter (for student properties)
+    const matchesSection = filterSection === 'all' || student.section === filterSection;
     
-    // Grade level filter
-    const matchesGrade = filterGrade === 'all' || enrollment.class?.gradeLevel?.toString() === filterGrade;
-    
-    // Trade type filter  
-    const matchesTrade = filterTrade === 'all' || enrollment.class?.tradeType === filterTrade;
-    
-    // Section filter
-    const matchesSection = filterSection === 'all' || enrollment.class?.section === filterSection;
-    
-    return matchesSearch && matchesClass && matchesLab && matchesGroup && matchesGrade && matchesTrade && matchesSection;
+    return matchesSearch && matchesGrade && matchesTrade && matchesSection;
   });
 
   // Pagination logic
-  const totalItems = filteredEnrollments.length;
+  const totalItems = filteredStudents.length;
   const totalPages = Math.ceil(totalItems / pageSize);
   const startIndex = (currentPage - 1) * pageSize;
   const endIndex = startIndex + pageSize;
-  const paginatedEnrollments = filteredEnrollments.slice(startIndex, endIndex);
+  const paginatedStudents = filteredStudents.slice(startIndex, endIndex);
 
   // Reset pagination when filters change
   const resetPagination = () => setCurrentPage(1);
@@ -214,10 +200,10 @@ export function StudentRoster() {
   };
 
   const handleSelectAll = () => {
-    if (selectedStudents.length === filteredEnrollments.length) {
+    if (selectedStudents.length === filteredStudents.length) {
       setSelectedStudents([]);
     } else {
-      setSelectedStudents(filteredEnrollments.map((e: EnrollmentWithDetails) => e.student!.id));
+      setSelectedStudents(filteredStudents.map((student: User) => student.id));
     }
   };
 
@@ -697,7 +683,7 @@ export function StudentRoster() {
                     <SelectItem value="all">All Labs</SelectItem>
                     {labs.map((lab) => (
                       <SelectItem key={lab.id} value={lab.id}>
-                        {lab.displayName} - {lab.name}
+{lab.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -907,7 +893,7 @@ export function StudentRoster() {
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={selectedStudents.length === filteredEnrollments.length && filteredEnrollments.length > 0}
+                  checked={selectedStudents.length === filteredStudents.length && filteredStudents.length > 0}
                   onChange={handleSelectAll}
                   className="h-4 w-4"
                   data-testid="checkbox-select-all"
@@ -949,21 +935,20 @@ export function StudentRoster() {
               <AlertCircle className="h-8 w-8 mr-2" />
               <span>Failed to load students. Please try again.</span>
             </div>
-          ) : filteredEnrollments.length === 0 ? (
+          ) : filteredStudents.length === 0 ? (
             <div className="flex items-center justify-center p-8 text-muted-foreground">
               <span>No students found.</span>
             </div>
           ) : (
             <div className="divide-y">
-              {paginatedEnrollments.map((enrollment: EnrollmentWithDetails) => {
-                const student = enrollment.student!;
+              {paginatedStudents.map((student: User) => {
                 const studentName = `${student.firstName} ${student.lastName}`;
-                const className = enrollment.class?.displayName || 'Unknown Class';
-                const instructorName = enrollment.instructor ? `${enrollment.instructor.firstName} ${enrollment.instructor.lastName}` : 'Unknown';
+                // Find enrollment for this student to show additional info
+                const studentEnrollment = enrollments.find(e => e.student?.id === student.id);
                 
                 return (
                   <div 
-                    key={enrollment.id} 
+                    key={student.id} 
                     className="flex items-center justify-between p-4 hover-elevate"
                     data-testid={`student-row-${student.id}`}
                   >
@@ -991,43 +976,64 @@ export function StudentRoster() {
                         </div>
                         <div className="text-xs text-muted-foreground flex items-center gap-4 mt-1">
                           <span>ID: {student.id.slice(0, 8)}</span>
-                          <span>•</span>
-                          <span className="font-medium">{className}</span>
+                          {student.gradeLevel && (
+                            <>
+                              <span>•</span>
+                              <span>Grade {student.gradeLevel}</span>
+                            </>
+                          )}
+                          {student.tradeType && (
+                            <>
+                              <span>•</span>
+                              <span>{student.tradeType === 'NM' ? 'Non Medical' : student.tradeType === 'M' ? 'Medical' : 'Commerce'}</span>
+                            </>
+                          )}
+                          {student.section && (
+                            <>
+                              <span>•</span>
+                              <span>Section {student.section}</span>
+                            </>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 mt-1">
-                          {enrollment.lab && (
-                            <Badge variant="outline" className="text-xs">{enrollment.lab.name}</Badge>
+                          {studentEnrollment?.lab && (
+                            <Badge variant="outline" className="text-xs">{studentEnrollment.lab.name}</Badge>
                           )}
-                          {enrollment.group && (
-                            <Badge variant="secondary" className="text-xs">{enrollment.group.name}</Badge>
+                          {studentEnrollment?.group && (
+                            <Badge variant="secondary" className="text-xs">{studentEnrollment.group.name}</Badge>
+                          )}
+                          {!studentEnrollment && (
+                            <Badge variant="outline" className="text-xs text-muted-foreground">Not Enrolled</Badge>
                           )}
                         </div>
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        {enrollment.seatNumber && (
-                          <div className="font-medium">Seat: {enrollment.seatNumber}</div>
+                        {studentEnrollment?.seatNumber && (
+                          <div className="font-medium">Seat: {studentEnrollment.seatNumber}</div>
                         )}
-                        {enrollment.computer && (
-                          <div>Computer: {enrollment.computer.name}</div>
+                        {studentEnrollment?.computer && (
+                          <div>Computer: {studentEnrollment.computer.name}</div>
                         )}
-                        <div className="text-xs">Instructor: {instructorName}</div>
+                        {studentEnrollment?.instructor && (
+                          <div className="text-xs">Instructor: {studentEnrollment.instructor.firstName} {studentEnrollment.instructor.lastName}</div>
+                        )}
                       </div>
                     </div>
                     
                     <div className="flex items-center gap-4">
                       <div className="text-right">
                         <div className="text-sm font-medium">
-                          {(enrollment as any).completedSessions || 0}/{(enrollment as any).totalSessions || 0} Sessions
+                          {studentEnrollment ? 'Enrolled' : 'Not Enrolled'}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {(enrollment as any).totalSessions ? Math.round((((enrollment as any).completedSessions || 0) / (enrollment as any).totalSessions) * 100) : 0}% complete
+                          {student.createdAt ? new Date(student.createdAt).toLocaleDateString() : ''}
                         </div>
                       </div>
                       <Badge 
-                        variant={enrollment.isActive ? 'secondary' : 'outline'}
+                        variant={studentEnrollment?.isActive ? 'secondary' : 'outline'}
                         data-testid={`badge-status-${student.id}`}
                       >
-                        {enrollment.isActive ? 'active' : 'inactive'}
+                        {studentEnrollment?.isActive ? 'enrolled' : 'not enrolled'}
                       </Badge>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
