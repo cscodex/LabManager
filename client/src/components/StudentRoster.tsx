@@ -9,6 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-select";
 import { Plus, Search, Mail, MoreVertical, AlertCircle, Edit, Trash2, UserPlus, Filter, ChevronLeft, ChevronRight, Upload, Download } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -104,7 +105,7 @@ type EnrollStudentFormData = z.infer<typeof enrollStudentSchema>;
 export function StudentRoster() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
-  const [filterClass, setFilterClass] = useState<string>('all');
+  const [filterClasses, setFilterClasses] = useState<string[]>([]);
   const [filterLab, setFilterLab] = useState<string>('all');
   const [filterGroup, setFilterGroup] = useState<string>('all');
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -173,8 +174,8 @@ export function StudentRoster() {
     // Find student's enrollment for enrollment-based filters
     const studentEnrollment = enrollments.find(e => e.student?.id === student.id);
 
-    // Class filter (based on enrollment)
-    const matchesClass = filterClass === 'all' || (studentEnrollment && studentEnrollment.classId === filterClass);
+    // Class filter (based on enrollment) - supports multiple selection
+    const matchesClass = filterClasses.length === 0 || (studentEnrollment && filterClasses.includes(studentEnrollment.classId));
 
     // Lab filter (based on enrollment)
     const matchesLab = filterLab === 'all' || (studentEnrollment && studentEnrollment.lab?.name === filterLab);
@@ -202,10 +203,10 @@ export function StudentRoster() {
     }
   }, [totalPages, currentPage]);
 
-  // Reset pagination when search term changes
+  // Reset pagination when search term or filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm]);
+  }, [searchTerm, filterClasses, filterLab, filterGroup, filterGrade, filterTrade, filterSection]);
 
   const handleStudentSelect = (studentId: string) => {
     setSelectedStudents(prev => 
@@ -968,19 +969,16 @@ export function StudentRoster() {
             {/* Primary Filters */}
             <div className="flex flex-col sm:flex-row gap-4">
               <div className="flex-1">
-                <Select value={filterClass} onValueChange={(value) => { setFilterClass(value); resetPagination(); }}>
-                  <SelectTrigger data-testid="select-filter-class">
-                    <SelectValue placeholder="Filter by Class" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Classes</SelectItem>
-                    {classes.map((classItem) => (
-                      <SelectItem key={classItem.id} value={classItem.id}>
-                        {classItem.displayName} - {classItem.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <MultiSelect
+                  options={classes.map((classItem): MultiSelectOption => ({
+                    label: `${classItem.displayName} - ${classItem.name}`,
+                    value: classItem.id
+                  }))}
+                  selected={filterClasses}
+                  onChange={(selected) => { setFilterClasses(selected); resetPagination(); }}
+                  placeholder="Filter by Classes"
+                  className="w-full"
+                />
               </div>
               
               <div className="flex-1">
