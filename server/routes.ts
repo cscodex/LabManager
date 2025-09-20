@@ -602,6 +602,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update student
+  app.patch('/api/students/:id', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      const studentId = req.params.id;
+
+      // Verify student exists
+      const existingStudent = await storage.getUser(studentId);
+      if (!existingStudent || existingStudent.role !== 'student') {
+        return res.status(404).json({ error: 'Student not found' });
+      }
+
+      // Validate update data - manually validate allowed fields
+      const allowedFields = ['firstName', 'lastName', 'email', 'studentId', 'gender', 'phone', 'address', 'gradeLevel', 'tradeType', 'section'];
+      const updateData: any = { role: 'student' }; // Ensure role remains student
+
+      // Only include allowed fields that are present in the request
+      for (const field of allowedFields) {
+        if (req.body[field] !== undefined) {
+          updateData[field] = req.body[field];
+        }
+      }
+
+      // Basic validation for required fields if they're being updated
+      if (updateData.email && typeof updateData.email !== 'string') {
+        return res.status(400).json({ error: 'Invalid email format' });
+      }
+      if (updateData.firstName && typeof updateData.firstName !== 'string') {
+        return res.status(400).json({ error: 'Invalid firstName format' });
+      }
+      if (updateData.lastName && typeof updateData.lastName !== 'string') {
+        return res.status(400).json({ error: 'Invalid lastName format' });
+      }
+
+      const updatedStudent = await storage.updateUser(studentId, updateData);
+
+      if (!updatedStudent) {
+        return res.status(404).json({ error: 'Student not found' });
+      }
+
+      // Remove password from response for security
+      const { password, ...sanitizedStudent } = updatedStudent;
+      res.json(sanitizedStudent);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: 'Invalid student data', details: error.errors });
+      }
+      if (error.constraint && error.constraint.includes('unique')) {
+        return res.status(409).json({ error: 'Email or Student ID already exists' });
+      }
+      console.error('Error updating student:', error);
+      res.status(500).json({ error: 'Failed to update student' });
+    }
+  });
+
+  // Delete student
+  app.delete('/api/students/:id', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      const studentId = req.params.id;
+
+      // Verify student exists
+      const existingStudent = await storage.getUser(studentId);
+      if (!existingStudent || existingStudent.role !== 'student') {
+        return res.status(404).json({ error: 'Student not found' });
+      }
+
+      // Check if student has active enrollments
+      const enrollments = await storage.getEnrollmentsByStudent(studentId);
+      if (enrollments.length > 0) {
+        return res.status(409).json({
+          error: 'Cannot delete student with active enrollments',
+          message: 'Please unenroll the student from all classes before deleting'
+        });
+      }
+
+      const deleted = await storage.deleteUser(studentId);
+      if (!deleted) {
+        return res.status(404).json({ error: 'Student not found' });
+      }
+
+      res.status(204).send();
+    } catch (error: any) {
+      console.error('Error deleting student:', error);
+      res.status(500).json({ error: 'Failed to delete student' });
+    }
+  });
+
   // Enrollments with detailed information
   app.get('/api/enrollments/details', requireAuth, async (req, res) => {
     try {

@@ -117,7 +117,7 @@ export function StudentRoster() {
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(50); // Increased to show more students by default
   
   // Additional filters for new student fields
   const [filterGrade, setFilterGrade] = useState<string>('all');
@@ -158,19 +158,31 @@ export function StudentRoster() {
   // Filter students based on search term and filters
   const filteredStudents = students.filter((student: User) => {
     // Search filter
-    const searchString = `${student.firstName || ''} ${student.lastName || ''} ${student.email || ''} ${student.id || ''}`;
+    const searchString = `${student.firstName || ''} ${student.lastName || ''} ${student.email || ''} ${student.id || ''} ${student.studentId || ''}`;
     const matchesSearch = searchString.toLowerCase().includes(searchTerm.toLowerCase());
-    
+
     // Grade level filter (for student properties)
     const matchesGrade = filterGrade === 'all' || student.gradeLevel?.toString() === filterGrade;
-    
+
     // Trade type filter (for student properties)
     const matchesTrade = filterTrade === 'all' || student.tradeType === filterTrade;
-    
+
     // Section filter (for student properties)
     const matchesSection = filterSection === 'all' || student.section === filterSection;
-    
-    return matchesSearch && matchesGrade && matchesTrade && matchesSection;
+
+    // Find student's enrollment for enrollment-based filters
+    const studentEnrollment = enrollments.find(e => e.student?.id === student.id);
+
+    // Class filter (based on enrollment)
+    const matchesClass = filterClass === 'all' || (studentEnrollment && studentEnrollment.classId === filterClass);
+
+    // Lab filter (based on enrollment)
+    const matchesLab = filterLab === 'all' || (studentEnrollment && studentEnrollment.lab?.name === filterLab);
+
+    // Group filter (based on enrollment)
+    const matchesGroup = filterGroup === 'all' || (studentEnrollment && studentEnrollment.group?.name === filterGroup);
+
+    return matchesSearch && matchesGrade && matchesTrade && matchesSection && matchesClass && matchesLab && matchesGroup;
   });
 
   // Pagination logic
@@ -339,11 +351,225 @@ export function StudentRoster() {
     }
   };
 
-  const handleDeleteStudent = (studentId: string) => {
-    // TODO: Implement delete student functionality
-    toast({
-      title: "Not implemented",
-      description: "Delete student functionality coming soon",
+  // Additional state for dialogs and operations
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [selectedStudentForEdit, setSelectedStudentForEdit] = useState<User | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [selectedStudentForDelete, setSelectedStudentForDelete] = useState<User | null>(null);
+
+  // Delete student mutation
+  const deleteStudentMutation = useMutation({
+    mutationFn: async (studentId: string) => {
+      const response = await apiRequest("DELETE", `/api/students/${studentId}`);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to delete student');
+      }
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/students'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/enrollments/details'] });
+      setShowDeleteDialog(false);
+      setSelectedStudentForDelete(null);
+      toast({
+        title: "Success",
+        description: "Student deleted successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete student",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Unenroll student mutation
+  const unenrollStudentMutation = useMutation({
+    mutationFn: async (enrollmentId: string) => {
+      const response = await apiRequest("DELETE", `/api/enrollments/${enrollmentId}`);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to unenroll student');
+      }
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/enrollments/details'] });
+      toast({
+        title: "Success",
+        description: "Student unenrolled successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to unenroll student",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Edit student mutation
+  const editStudentMutation = useMutation({
+    mutationFn: async (data: { studentId: string; updates: Partial<AddStudentFormData> }) => {
+      const response = await apiRequest("PATCH", `/api/students/${data.studentId}`, data.updates);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to update student');
+      }
+      return await response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/students'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/enrollments/details'] });
+      setShowEditDialog(false);
+      setSelectedStudentForEdit(null);
+      addStudentForm.reset();
+      toast({
+        title: "Success",
+        description: "Student updated successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update student",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleDeleteStudent = (student: User) => {
+    setSelectedStudentForDelete(student);
+    setShowDeleteDialog(true);
+  };
+
+  const handleEditStudent = (student: User) => {
+    setSelectedStudentForEdit(student);
+    // Pre-populate form with student data
+    addStudentForm.reset({
+      firstName: student.firstName,
+      lastName: student.lastName,
+      email: student.email,
+      studentId: student.studentId || '',
+      gender: (student.gender === 'male' || student.gender === 'female') ? student.gender : undefined,
+      phone: student.phone || '',
+      address: student.address || '',
+      gradeLevel: student.gradeLevel || 11,
+      tradeType: (student.tradeType === 'NM' || student.tradeType === 'M' || student.tradeType === 'C') ? student.tradeType : 'NM',
+      section: student.section || 'A',
+    });
+    setShowEditDialog(true);
+  };
+
+  const handleUnenrollStudent = (enrollmentId: string) => {
+    unenrollStudentMutation.mutate(enrollmentId);
+  };
+
+  const confirmDeleteStudent = () => {
+    if (selectedStudentForDelete) {
+      deleteStudentMutation.mutate(selectedStudentForDelete.id);
+    }
+  };
+
+  const handleEditSubmit = (data: AddStudentFormData) => {
+    if (selectedStudentForEdit) {
+      editStudentMutation.mutate({
+        studentId: selectedStudentForEdit.id,
+        updates: data
+      });
+    }
+  };
+
+  // Bulk operations
+  const handleBulkDelete = () => {
+    if (selectedStudents.length === 0) {
+      toast({
+        title: "No students selected",
+        description: "Please select students to delete",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Check if any selected students have enrollments
+    const studentsWithEnrollments = selectedStudents.filter(studentId =>
+      enrollments.some(e => e.student?.id === studentId)
+    );
+
+    if (studentsWithEnrollments.length > 0) {
+      toast({
+        title: "Cannot delete enrolled students",
+        description: `${studentsWithEnrollments.length} selected students have active enrollments. Please unenroll them first.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Proceed with bulk delete
+    Promise.all(
+      selectedStudents.map(studentId =>
+        deleteStudentMutation.mutateAsync(studentId)
+      )
+    ).then(() => {
+      setSelectedStudents([]);
+      toast({
+        title: "Success",
+        description: `${selectedStudents.length} students deleted successfully`,
+      });
+    }).catch((error) => {
+      toast({
+        title: "Error",
+        description: "Some students could not be deleted",
+        variant: "destructive",
+      });
+    });
+  };
+
+  const handleBulkEnroll = (classId: string) => {
+    if (selectedStudents.length === 0) {
+      toast({
+        title: "No students selected",
+        description: "Please select students to enroll",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Check if any selected students are already enrolled
+    const alreadyEnrolled = selectedStudents.filter(studentId =>
+      enrollments.some(e => e.student?.id === studentId && e.isActive)
+    );
+
+    if (alreadyEnrolled.length > 0) {
+      toast({
+        title: "Some students already enrolled",
+        description: `${alreadyEnrolled.length} selected students are already enrolled in classes`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Proceed with bulk enrollment
+    Promise.all(
+      selectedStudents.map(studentId =>
+        enrollStudentMutation.mutateAsync({ classId, studentId })
+      )
+    ).then(() => {
+      setSelectedStudents([]);
+      toast({
+        title: "Success",
+        description: `${selectedStudents.length} students enrolled successfully`,
+      });
+    }).catch((error) => {
+      toast({
+        title: "Error",
+        description: "Some students could not be enrolled",
+        variant: "destructive",
+      });
     });
   };
 
@@ -712,119 +938,7 @@ export function StudentRoster() {
         </div>
       </div>
       
-      {/* Search and Filters */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by name, email, ID, lab, class, or group..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                  data-testid="input-search"
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" data-testid="button-export">
-                  Export
-                </Button>
-                <Button variant="outline" size="sm" data-testid="button-import">
-                  Import
-                </Button>
-              </div>
-            </div>
-            
-            {/* Primary Filters */}
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1">
-                <Select value={filterClass} onValueChange={(value) => { setFilterClass(value); resetPagination(); }}>
-                  <SelectTrigger data-testid="select-filter-class">
-                    <SelectValue placeholder="Filter by Class" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Classes</SelectItem>
-                    {classes.map((classItem) => (
-                      <SelectItem key={classItem.id} value={classItem.id}>
-                        {classItem.displayName} - {classItem.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="flex-1">
-                <Select value={filterLab} onValueChange={(value) => { setFilterLab(value); resetPagination(); }}>
-                  <SelectTrigger data-testid="select-filter-lab">
-                    <SelectValue placeholder="Filter by Lab" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Labs</SelectItem>
-                    {labs.map((lab) => (
-                      <SelectItem key={lab.id} value={lab.id}>
-{lab.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            
-            {/* Secondary Filters */}
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1">
-                <Select value={filterGrade} onValueChange={(value) => { setFilterGrade(value); resetPagination(); }}>
-                  <SelectTrigger data-testid="select-filter-grade">
-                    <SelectValue placeholder="Filter by Grade" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Grades</SelectItem>
-                    <SelectItem value="11">Grade 11</SelectItem>
-                    <SelectItem value="12">Grade 12</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="flex-1">
-                <Select value={filterTrade} onValueChange={(value) => { setFilterTrade(value); resetPagination(); }}>
-                  <SelectTrigger data-testid="select-filter-trade">
-                    <SelectValue placeholder="Filter by Trade" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Trades</SelectItem>
-                    <SelectItem value="NM">Non Medical</SelectItem>
-                    <SelectItem value="M">Medical</SelectItem>
-                    <SelectItem value="C">Commerce</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="flex-1">
-                <Select value={filterSection} onValueChange={(value) => { setFilterSection(value); resetPagination(); }}>
-                  <SelectTrigger data-testid="select-filter-section">
-                    <SelectValue placeholder="Filter by Section" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Sections</SelectItem>
-                    <SelectItem value="A">Section A</SelectItem>
-                    <SelectItem value="B">Section B</SelectItem>
-                    <SelectItem value="C">Section C</SelectItem>
-                    <SelectItem value="D">Section D</SelectItem>
-                    <SelectItem value="E">Section E</SelectItem>
-                    <SelectItem value="F">Section F</SelectItem>
-                    <SelectItem value="G">Section G</SelectItem>
-                    <SelectItem value="H">Section H</SelectItem>
-                    <SelectItem value="I">Section I</SelectItem>
-                    <SelectItem value="J">Section J</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+
 
       {/* Search and Filters */}
       <Card>
@@ -957,6 +1071,9 @@ export function StudentRoster() {
                     <SelectItem value="10">10 per page</SelectItem>
                     <SelectItem value="25">25 per page</SelectItem>
                     <SelectItem value="50">50 per page</SelectItem>
+                    <SelectItem value="100">100 per page</SelectItem>
+                    <SelectItem value="250">250 per page</SelectItem>
+                    <SelectItem value="1000">Show All</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -983,9 +1100,41 @@ export function StudentRoster() {
               </div>
             </div>
             {selectedStudents.length > 0 && (
-              <Badge variant="secondary" data-testid="badge-selected">
-                {selectedStudents.length} selected
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" data-testid="badge-selected">
+                  {selectedStudents.length} selected
+                </Badge>
+                <div className="flex gap-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" data-testid="button-bulk-enroll">
+                        <UserPlus className="h-4 w-4 mr-2" />
+                        Bulk Enroll
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      {classes.map((classItem) => (
+                        <DropdownMenuItem
+                          key={classItem.id}
+                          onClick={() => handleBulkEnroll(classItem.id)}
+                          data-testid={`bulk-enroll-${classItem.id}`}
+                        >
+                          {classItem.displayName} - {classItem.name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleBulkDelete}
+                    data-testid="button-bulk-delete"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete Selected
+                  </Button>
+                </div>
+              </div>
             )}
           </CardTitle>
         </CardHeader>
@@ -1127,16 +1276,27 @@ export function StudentRoster() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleEnrollInClass(student.id)} data-testid={`menu-enroll-${student.id}`}>
-                            <UserPlus className="h-4 w-4 mr-2" />
-                            Enroll in Class
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => console.log('Edit student:', student.id)} data-testid={`menu-edit-${student.id}`}>
+                          {!studentEnrollment ? (
+                            <DropdownMenuItem onClick={() => handleEnrollInClass(student.id)} data-testid={`menu-enroll-${student.id}`}>
+                              <UserPlus className="h-4 w-4 mr-2" />
+                              Enroll in Class
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem
+                              onClick={() => handleUnenrollStudent(studentEnrollment.id)}
+                              data-testid={`menu-unenroll-${student.id}`}
+                              className="text-orange-600"
+                            >
+                              <UserPlus className="h-4 w-4 mr-2" />
+                              Unenroll from Class
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem onClick={() => handleEditStudent(student)} data-testid={`menu-edit-${student.id}`}>
                             <Edit className="h-4 w-4 mr-2" />
                             Edit Student
                           </DropdownMenuItem>
-                          <DropdownMenuItem 
-                            onClick={() => handleDeleteStudent(student.id)} 
+                          <DropdownMenuItem
+                            onClick={() => handleDeleteStudent(student)}
                             className="text-destructive"
                             data-testid={`menu-delete-${student.id}`}
                           >
@@ -1389,6 +1549,174 @@ export function StudentRoster() {
               data-testid="button-submit-import"
             >
               {importStudentsMutation.isPending ? "Importing..." : "Import Students"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Student Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Student</DialogTitle>
+            <DialogDescription>
+              Update student information and profile details.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...addStudentForm}>
+            <form onSubmit={addStudentForm.handleSubmit(handleEditSubmit)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={addStudentForm.control}
+                  name="firstName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>First Name</FormLabel>
+                      <FormControl>
+                        <Input {...field} data-testid="input-edit-first-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={addStudentForm.control}
+                  name="lastName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Last Name</FormLabel>
+                      <FormControl>
+                        <Input {...field} data-testid="input-edit-last-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={addStudentForm.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="email" data-testid="input-edit-email" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={addStudentForm.control}
+                  name="studentId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Student ID</FormLabel>
+                      <FormControl>
+                        <Input {...field} data-testid="input-edit-student-id" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={addStudentForm.control}
+                  name="gender"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Gender</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-edit-gender">
+                            <SelectValue placeholder="Select gender" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="male">Male</SelectItem>
+                          <SelectItem value="female">Female</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowEditDialog(false)}
+                  data-testid="button-cancel-edit"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={editStudentMutation.isPending}
+                  data-testid="button-submit-edit"
+                >
+                  {editStudentMutation.isPending ? "Updating..." : "Update Student"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Delete Student</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this student? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedStudentForDelete && (
+            <div className="py-4">
+              <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
+                <Avatar>
+                  <AvatarFallback>
+                    {selectedStudentForDelete.firstName[0]}{selectedStudentForDelete.lastName[0]}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <div className="font-medium">
+                    {selectedStudentForDelete.firstName} {selectedStudentForDelete.lastName}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {selectedStudentForDelete.email}
+                  </div>
+                  {selectedStudentForDelete.studentId && (
+                    <div className="text-xs text-muted-foreground">
+                      ID: {selectedStudentForDelete.studentId}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowDeleteDialog(false)}
+              data-testid="button-cancel-delete"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={confirmDeleteStudent}
+              disabled={deleteStudentMutation.isPending}
+              data-testid="button-confirm-delete"
+            >
+              {deleteStudentMutation.isPending ? "Deleting..." : "Delete Student"}
             </Button>
           </DialogFooter>
         </DialogContent>
