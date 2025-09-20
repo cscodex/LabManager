@@ -9,7 +9,7 @@ If your deployed LabManager has no users, you need to bootstrap the system with 
 ### Step 1: Create Initial Admin User
 ```bash
 curl -X POST https://your-app.onrender.com/api/bootstrap \
-  -H "Content-Type: application/json"
+  -H "Content-Type: application/json"x
 ```
 
 **Expected Response:**
