@@ -40,7 +40,7 @@ export function MultiSelect({
   disabled = false,
   maxDisplay = 3,
 }: MultiSelectProps) {
-  const [open, setOpen] = React.useState(false)
+  const [open, setOpen] = React.useState(false);
 
   const handleUnselect = (item: string) => {
     onChange(selected.filter((i) => i !== item))

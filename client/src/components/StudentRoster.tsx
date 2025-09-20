@@ -21,7 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { User, Class, Enrollment, Lab, Group } from "@shared/schema";
 import { baseUserSchema } from "@shared/schema";
 import {
-  getStudentAssignedClass,
+  getStudentAssignedClass as getStudentAssignedClassUtil,
   validateStudentClassAssignment,
   getClassDisplayNameFromProfile,
   formatClassAssignment,
@@ -183,7 +183,7 @@ export function StudentRoster() {
 
     // Class filter (based on student profile) - supports multiple selection
     const studentClass = getStudentClass(student);
-    const matchesClass = filterClasses.length === 0 || (studentClass && filterClasses.includes(studentClass.id));
+    const matchesClass = filterClasses.length === 0 || (studentClass?.id && filterClasses.includes(studentClass.id));
 
     // Lab filter (based on enrollment)
     const matchesLab = filterLab === 'all' || (studentEnrollment && studentEnrollment.lab?.name === filterLab);
@@ -206,12 +206,27 @@ export function StudentRoster() {
 
   // Get class assignment for student based on profile (simplified system)
   const getStudentClassAssignment = (student: User): StudentClassAssignment => {
-    return validateStudentClassAssignment(student, classes);
+    try {
+      return validateStudentClassAssignment(student, classes || []);
+    } catch (error) {
+      console.error('Error validating student class assignment:', error);
+      return {
+        student,
+        assignedClass: null,
+        isValidAssignment: false,
+        issues: ['Error validating assignment']
+      };
+    }
   };
 
   // Get student's assigned class based on profile
   const getStudentClass = (student: User) => {
-    return getStudentAssignedClass(student, classes);
+    try {
+      return getStudentAssignedClassUtil(student, classes || []);
+    } catch (error) {
+      console.error('Error getting student class:', error);
+      return null;
+    }
   };
 
   // Get enrollment details for each student (legacy system for groups/seats)
@@ -1258,16 +1273,25 @@ export function StudentRoster() {
                         <div className="flex items-center gap-2 mt-1">
                           {/* Show class based on student profile */}
                           {(() => {
-                            const assignedClass = getStudentClass(student);
-                            return assignedClass ? (
-                              <Badge variant="default" className="text-xs">
-                                {assignedClass.displayName}
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-xs text-muted-foreground">
-                                {getClassDisplayNameFromProfile(student.gradeLevel, student.tradeType, student.section)}
-                              </Badge>
-                            );
+                            try {
+                              const assignedClass = getStudentClass(student);
+                              return assignedClass ? (
+                                <Badge variant="default" className="text-xs">
+                                  {assignedClass.displayName || 'Unknown Class'}
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-xs text-muted-foreground">
+                                  {getClassDisplayNameFromProfile(student.gradeLevel, student.tradeType, student.section)}
+                                </Badge>
+                              );
+                            } catch (error) {
+                              console.error('Error rendering class badge:', error);
+                              return (
+                                <Badge variant="outline" className="text-xs text-muted-foreground">
+                                  Error Loading Class
+                                </Badge>
+                              );
+                            }
                           })()}
 
                           {/* Show enrollment-based info for groups/labs */}
