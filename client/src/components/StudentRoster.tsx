@@ -20,6 +20,13 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { User, Class, Enrollment, Lab, Group } from "@shared/schema";
 import { baseUserSchema } from "@shared/schema";
+import {
+  getStudentAssignedClass,
+  validateStudentClassAssignment,
+  getClassDisplayNameFromProfile,
+  formatClassAssignment,
+  type StudentClassAssignment
+} from "@shared/student-class-utils";
 
 interface StudentEnrollmentDetails {
   student: User;
@@ -174,8 +181,9 @@ export function StudentRoster() {
     // Find student's enrollment for enrollment-based filters
     const studentEnrollment = enrollments.find(e => e.student?.id === student.id);
 
-    // Class filter (based on enrollment) - supports multiple selection
-    const matchesClass = filterClasses.length === 0 || (studentEnrollment && filterClasses.includes(studentEnrollment.classId));
+    // Class filter (based on student profile) - supports multiple selection
+    const studentClass = getStudentClass(student);
+    const matchesClass = filterClasses.length === 0 || (studentClass && filterClasses.includes(studentClass.id));
 
     // Lab filter (based on enrollment)
     const matchesLab = filterLab === 'all' || (studentEnrollment && studentEnrollment.lab?.name === filterLab);
@@ -195,6 +203,34 @@ export function StudentRoster() {
 
   // Reset pagination when filters change
   const resetPagination = () => setCurrentPage(1);
+
+  // Get class assignment for student based on profile (simplified system)
+  const getStudentClassAssignment = (student: User): StudentClassAssignment => {
+    return validateStudentClassAssignment(student, classes);
+  };
+
+  // Get student's assigned class based on profile
+  const getStudentClass = (student: User) => {
+    return getStudentAssignedClass(student, classes);
+  };
+
+  // Get enrollment details for each student (legacy system for groups/seats)
+  const getStudentEnrollment = (studentId: string): StudentEnrollmentDetails | null => {
+    const enrollment = enrollments.find(e => e.studentId === studentId);
+    if (!enrollment) return null;
+
+    const enrolledClass = classes.find(c => c.id === enrollment.classId);
+    const lab = enrolledClass ? labs.find(l => l.id === enrolledClass.labId) : null;
+    const group = enrollment.groupId ? groups.find(g => g.id === enrollment.groupId) : null;
+
+    return {
+      student: students.find(s => s.id === studentId)!,
+      enrollment: enrollment!,
+      class: enrolledClass!,
+      lab: lab || null,
+      group: group || null
+    };
+  };
 
   // Guard against out-of-range pages when filters or search change
   useEffect(() => {
@@ -1103,25 +1139,21 @@ export function StudentRoster() {
                   {selectedStudents.length} selected
                 </Badge>
                 <div className="flex gap-2">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" data-testid="button-bulk-enroll">
-                        <UserPlus className="h-4 w-4 mr-2" />
-                        Bulk Enroll
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      {classes.map((classItem) => (
-                        <DropdownMenuItem
-                          key={classItem.id}
-                          onClick={() => handleBulkEnroll(classItem.id)}
-                          data-testid={`bulk-enroll-${classItem.id}`}
-                        >
-                          {classItem.displayName} - {classItem.name}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      // TODO: Implement bulk profile editing
+                      toast({
+                        title: "Feature Coming Soon",
+                        description: "Bulk profile editing will be available soon",
+                      });
+                    }}
+                    data-testid="button-bulk-edit"
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    Bulk Edit Profiles
+                  </Button>
                   <Button
                     variant="destructive"
                     size="sm"
@@ -1224,14 +1256,26 @@ export function StudentRoster() {
                           )}
                         </div>
                         <div className="flex items-center gap-2 mt-1">
+                          {/* Show class based on student profile */}
+                          {(() => {
+                            const assignedClass = getStudentClass(student);
+                            return assignedClass ? (
+                              <Badge variant="default" className="text-xs">
+                                {assignedClass.displayName}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-xs text-muted-foreground">
+                                {getClassDisplayNameFromProfile(student.gradeLevel, student.tradeType, student.section)}
+                              </Badge>
+                            );
+                          })()}
+
+                          {/* Show enrollment-based info for groups/labs */}
                           {studentEnrollment?.lab && (
                             <Badge variant="outline" className="text-xs">{studentEnrollment.lab.name}</Badge>
                           )}
                           {studentEnrollment?.group && (
                             <Badge variant="secondary" className="text-xs">{studentEnrollment.group.name}</Badge>
-                          )}
-                          {!studentEnrollment && (
-                            <Badge variant="outline" className="text-xs text-muted-foreground">Not Enrolled</Badge>
                           )}
                         </div>
                       </div>
@@ -1251,17 +1295,26 @@ export function StudentRoster() {
                     <div className="flex items-center gap-4">
                       <div className="text-right">
                         <div className="text-sm font-medium">
-                          {studentEnrollment ? 'Enrolled' : 'Not Enrolled'}
+                          {(() => {
+                            const assignedClass = getStudentClass(student);
+                            return assignedClass ? 'Assigned' : 'Unassigned';
+                          })()}
                         </div>
                         <div className="text-xs text-muted-foreground">
                           {student.createdAt ? new Date(student.createdAt).toLocaleDateString() : ''}
                         </div>
                       </div>
-                      <Badge 
-                        variant={studentEnrollment?.isActive ? 'secondary' : 'outline'}
+                      <Badge
+                        variant={(() => {
+                          const assignedClass = getStudentClass(student);
+                          return assignedClass ? 'secondary' : 'outline';
+                        })()}
                         data-testid={`badge-status-${student.id}`}
                       >
-                        {studentEnrollment?.isActive ? 'enrolled' : 'not enrolled'}
+                        {(() => {
+                          const assignedClass = getStudentClass(student);
+                          return assignedClass ? 'assigned' : 'unassigned';
+                        })()}
                       </Badge>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -1274,24 +1327,9 @@ export function StudentRoster() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          {!studentEnrollment ? (
-                            <DropdownMenuItem onClick={() => handleEnrollInClass(student.id)} data-testid={`menu-enroll-${student.id}`}>
-                              <UserPlus className="h-4 w-4 mr-2" />
-                              Enroll in Class
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem
-                              onClick={() => handleUnenrollStudent(studentEnrollment.id)}
-                              data-testid={`menu-unenroll-${student.id}`}
-                              className="text-orange-600"
-                            >
-                              <UserPlus className="h-4 w-4 mr-2" />
-                              Unenroll from Class
-                            </DropdownMenuItem>
-                          )}
                           <DropdownMenuItem onClick={() => handleEditStudent(student)} data-testid={`menu-edit-${student.id}`}>
                             <Edit className="h-4 w-4 mr-2" />
-                            Edit Student
+                            Edit Student Profile
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => handleDeleteStudent(student)}
