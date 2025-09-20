@@ -1,0 +1,11 @@
+firstName,lastName,email,studentId,gender,phone,address,gradeLevel,tradeType,section
+John,Doe,john.doe@student.edu,STU001,male,123-456-7890,123 Main St,11,NM,A
+Jane,Smith,jane.smith@student.edu,STU002,female,123-456-7891,456 Oak Ave,11,NM,B
+Mike,Johnson,mike.johnson@student.edu,STU003,male,123-456-7892,789 Pine Rd,11,M,G
+Sarah,Williams,sarah.williams@student.edu,STU004,female,123-456-7893,321 Elm St,11,M,H
+David,Brown,david.brown@student.edu,STU005,male,123-456-7894,654 Maple Dr,11,C,I
+Lisa,Davis,lisa.davis@student.edu,STU006,female,123-456-7895,987 Cedar Ln,11,C,J
+Tom,Wilson,tom.wilson@student.edu,STU007,male,123-456-7896,147 Birch Way,12,NM,A
+Amy,Garcia,amy.garcia@student.edu,STU008,female,123-456-7897,258 Spruce St,12,NM,B
+Chris,Martinez,chris.martinez@student.edu,STU009,male,123-456-7898,369 Willow Ave,12,M,G
+Emma,Anderson,emma.anderson@student.edu,STU010,female,123-456-7899,741 Poplar Rd,12,M,H

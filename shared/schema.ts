@@ -11,6 +11,11 @@ export const users = pgTable("users", {
   role: text("role").notNull().default("student"), // instructor, student
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
+  // Enhanced student profile fields
+  studentId: text("student_id").unique(), // Unique student identifier (nullable for instructors)
+  gender: text("gender"), // 'male', 'female' (nullable for instructors)
+  phone: text("phone"), // Contact phone number
+  address: text("address"), // Student address
   // Student-specific fields
   gradeLevel: integer("grade_level"), // 11 or 12 (nullable for instructors)
   tradeType: text("trade_type"), // "NM" (Non Medical), "M" (Medical), "C" (Commerce) - matches classes table
@@ -25,6 +30,19 @@ export const labs = pgTable("labs", {
   description: text("description"),
   location: text("location").notNull(),
   capacity: integer("capacity").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Computers table
+export const computers = pgTable("computers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(), // e.g., "CL1-PC-001"
+  labId: varchar("lab_id").notNull().references(() => labs.id),
+  status: text("status").notNull().default("available"), // available, in_use, maintenance
+  cpu: text("cpu"), // CPU specifications
+  ram: text("ram"), // RAM specifications
+  storage: text("storage"), // Storage specifications
+  os: text("os"), // Operating system
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -46,19 +64,6 @@ export const classes = pgTable("classes", {
 }, (table) => ({
   // Unique constraint: one class per grade, trade, section, semester, and year
   uniqueClass: unique().on(table.gradeLevel, table.tradeType, table.section, table.semester, table.year),
-}));
-
-// Computers table
-export const computers = pgTable("computers", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: text("name").notNull(),
-  labId: varchar("lab_id").references(() => labs.id).notNull(),
-  specs: text("specs"),
-  isActive: boolean("is_active").default(true).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => ({
-  // Unique constraint: one computer name per lab
-  uniqueComputerInLab: unique().on(table.name, table.labId),
 }));
 
 // Groups table
@@ -166,10 +171,19 @@ export const baseUserSchema = createInsertSchema(users).pick({
   password: true,
   firstName: true,
   lastName: true,
+  studentId: true,
+  gender: true,
+  phone: true,
+  address: true,
   gradeLevel: true,
   tradeType: true,
   section: true,
 }).extend({
+  // Validation for enhanced student fields
+  studentId: z.string().optional(),
+  gender: z.enum(["male", "female"]).optional(),
+  phone: z.string().optional(),
+  address: z.string().optional(),
   // Validation for student fields - aligned with classes table
   gradeLevel: z.number().int().min(11).max(12).optional(),
   tradeType: z.enum(["NM", "M", "C"]).optional(),
@@ -209,10 +223,19 @@ export const insertUserWithRoleSchema = createInsertSchema(users).pick({
   role: true,
   firstName: true,
   lastName: true,
+  studentId: true,
+  gender: true,
+  phone: true,
+  address: true,
   gradeLevel: true,
   tradeType: true,
   section: true,
 }).extend({
+  // Validation for enhanced student fields
+  studentId: z.string().optional(),
+  gender: z.enum(["male", "female"]).optional(),
+  phone: z.string().optional(),
+  address: z.string().optional(),
   // Validation for student fields - aligned with classes table
   gradeLevel: z.number().int().min(11).max(12).optional(),
   tradeType: z.enum(["NM", "M", "C"]).optional(),
@@ -250,6 +273,18 @@ export const insertLabSchema = createInsertSchema(labs).pick({
   description: true,
   location: true,
   capacity: true,
+});
+
+export const insertComputerSchema = createInsertSchema(computers).pick({
+  name: true,
+  labId: true,
+  status: true,
+  cpu: true,
+  ram: true,
+  storage: true,
+  os: true,
+}).extend({
+  status: z.enum(["available", "in_use", "maintenance"]).default("available"),
 });
 
 export const insertClassSchema = createInsertSchema(classes).pick({
@@ -302,12 +337,6 @@ export const insertTimetableSchema = createInsertSchema(timetables).pick({
 }, {
   message: "End time must be after start time",
   path: ["endTime"]
-});
-
-export const insertComputerSchema = createInsertSchema(computers).pick({
-  name: true,
-  labId: true,
-  specs: true,
 });
 
 export const insertGroupSchema = createInsertSchema(groups).pick({
@@ -371,14 +400,14 @@ export type User = typeof users.$inferSelect;
 export type InsertLab = z.infer<typeof insertLabSchema>;
 export type Lab = typeof labs.$inferSelect;
 
+export type InsertComputer = z.infer<typeof insertComputerSchema>;
+export type Computer = typeof computers.$inferSelect;
+
 export type InsertClass = z.infer<typeof insertClassSchema>;
 export type Class = typeof classes.$inferSelect;
 
 export type InsertTimetable = z.infer<typeof insertTimetableSchema>;
 export type Timetable = typeof timetables.$inferSelect;
-
-export type InsertComputer = z.infer<typeof insertComputerSchema>;
-export type Computer = typeof computers.$inferSelect;
 
 export type InsertGroup = z.infer<typeof insertGroupSchema>;
 export type Group = typeof groups.$inferSelect;

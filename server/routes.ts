@@ -496,7 +496,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/students', requireAuth, async (req, res) => {
     try {
       const userRole = req.user?.role;
-      
+
       if (userRole === 'instructor') {
         // Instructors can see all students
         const students = await storage.getUsersByRole('student');
@@ -513,6 +513,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('Error fetching students:', error);
       res.status(500).json({ error: 'Failed to fetch students' });
+    }
+  });
+
+  // Create individual student
+  app.post('/api/students', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      const studentData = {
+        ...req.body,
+        role: 'student'
+      };
+
+      const validatedData = insertUserWithRoleSchema.parse(studentData);
+      const student = await storage.createUser(validatedData);
+
+      // Remove password from response for security
+      const { password, ...sanitizedStudent } = student;
+      res.status(201).json(sanitizedStudent);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: 'Invalid student data', details: error.errors });
+      }
+      if (error.constraint && error.constraint.includes('unique')) {
+        return res.status(409).json({ error: 'Email or Student ID already exists' });
+      }
+      console.error('Error creating student:', error);
+      res.status(500).json({ error: 'Failed to create student' });
     }
   });
 

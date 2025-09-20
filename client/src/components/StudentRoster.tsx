@@ -73,18 +73,22 @@ interface EnrollmentWithDetails {
 // Form schemas - extend the shared schema for consistency
 const addStudentSchema = baseUserSchema.extend({
   gradeLevel: z.number().int().min(11).max(12), // Make required for students
-  tradeType: z.enum(["NM", "M", "C"]), // Make required for students  
+  tradeType: z.enum(["NM", "M", "C"]), // Make required for students
   section: z.string().regex(/^[A-J]$/, "Section must be A through J"), // Make required for students
+  studentId: z.string().min(1, "Student ID is required").optional(),
+  gender: z.enum(["male", "female"]).optional(),
+  phone: z.string().optional(),
+  address: z.string().optional(),
 }).refine((data) => {
   // Section validation based on trade type (matches backend rules)
   if (data.tradeType === "NM") {
     return /^[A-F]$/.test(data.section);
   } else if (data.tradeType === "M" || data.tradeType === "C") {
-    return /^[A-B]$/.test(data.section);
+    return /^[G-J]$/.test(data.section);
   }
   return true;
 }, {
-  message: "Section must be A-F for Non Medical (NM), A-B for Medical (M) or Commerce (C)",
+  message: "Section must be A-F for Non Medical (NM), G-H for Medical (M), I-J for Commerce (C)",
   path: ["section"]
 });
 
@@ -215,6 +219,10 @@ export function StudentRoster() {
       lastName: "",
       email: "",
       password: "",
+      studentId: "",
+      gender: undefined,
+      phone: "",
+      address: "",
       gradeLevel: 11,
       tradeType: "NM",
       section: "A",
@@ -357,9 +365,10 @@ export function StudentRoster() {
             return;
           }
 
-          // Expected headers: firstName,lastName,email,gradeLevel,tradeType,section
+          // Expected headers: firstName,lastName,email,studentId,gender,phone,address,gradeLevel,tradeType,section
           const headers = lines[0].split(',').map(h => h.trim());
           const expectedHeaders = ['firstName', 'lastName', 'email', 'gradeLevel', 'tradeType', 'section'];
+          const optionalHeaders = ['studentId', 'gender', 'phone', 'address'];
           
           const missingHeaders = expectedHeaders.filter(h => !headers.includes(h));
           if (missingHeaders.length > 0) {
@@ -384,6 +393,10 @@ export function StudentRoster() {
                 firstName: rowData.firstName,
                 lastName: rowData.lastName,
                 email: rowData.email,
+                studentId: rowData.studentId || undefined,
+                gender: rowData.gender || undefined,
+                phone: rowData.phone || undefined,
+                address: rowData.address || undefined,
                 gradeLevel: parseInt(rowData.gradeLevel),
                 tradeType: rowData.tradeType,
                 section: rowData.section,
@@ -516,6 +529,68 @@ export function StudentRoster() {
                       </FormItem>
                     )}
                   />
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={addStudentForm.control}
+                      name="studentId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Student ID</FormLabel>
+                          <FormControl>
+                            <Input {...field} data-testid="input-student-id" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={addStudentForm.control}
+                      name="gender"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Gender</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-gender">
+                                <SelectValue placeholder="Select" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="male">Male</SelectItem>
+                              <SelectItem value="female">Female</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <FormField
+                    control={addStudentForm.control}
+                    name="phone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Phone</FormLabel>
+                        <FormControl>
+                          <Input {...field} data-testid="input-phone" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={addStudentForm.control}
+                    name="address"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Address</FormLabel>
+                        <FormControl>
+                          <Input {...field} data-testid="input-address" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <div className="grid grid-cols-3 gap-4">
                     <FormField
                       control={addStudentForm.control}
@@ -594,10 +669,16 @@ export function StudentRoster() {
                                   <SelectItem value="F">Section F</SelectItem>
                                 </>
                               )}
-                              {(selectedTradeType === "M" || selectedTradeType === "C") && (
+                              {selectedTradeType === "M" && (
                                 <>
-                                  <SelectItem value="A">Section A</SelectItem>
-                                  <SelectItem value="B">Section B</SelectItem>
+                                  <SelectItem value="G">Section G</SelectItem>
+                                  <SelectItem value="H">Section H</SelectItem>
+                                </>
+                              )}
+                              {selectedTradeType === "C" && (
+                                <>
+                                  <SelectItem value="I">Section I</SelectItem>
+                                  <SelectItem value="J">Section J</SelectItem>
                                 </>
                               )}
                             </SelectContent>
