@@ -6,7 +6,7 @@
 -- =============================================================================
 
 -- Create admin user with hashed password (admin123)
-INSERT INTO users (id, email, password, role, first_name, last_name, created_at, updated_at)
+INSERT INTO users (id, email, password, role, first_name, last_name, created_at)
 VALUES (
   gen_random_uuid(),
   'admin@labmanager.com',
@@ -14,7 +14,6 @@ VALUES (
   'instructor',
   'System',
   'Administrator',
-  NOW(),
   NOW()
 );
 
@@ -23,32 +22,32 @@ VALUES (
 -- =============================================================================
 
 -- Insert test labs
-INSERT INTO labs (id, name, description, location, capacity, created_at, updated_at) VALUES
-(gen_random_uuid(), 'Computer Lab A', 'Main computer laboratory with 30 workstations', 'Building A, Ground Floor', 30, NOW(), NOW()),
-(gen_random_uuid(), 'Computer Lab B', 'Secondary computer laboratory with 20 workstations', 'Building B, First Floor', 20, NOW(), NOW()),
-(gen_random_uuid(), 'Programming Lab', 'Specialized programming laboratory with advanced hardware', 'Building A, Second Floor', 25, NOW(), NOW());
+INSERT INTO labs (id, name, description, location, capacity, created_at) VALUES
+(gen_random_uuid(), 'Computer Lab A', 'Main computer laboratory with 30 workstations', 'Building A, Ground Floor', 30, NOW()),
+(gen_random_uuid(), 'Computer Lab B', 'Secondary computer laboratory with 20 workstations', 'Building B, First Floor', 20, NOW()),
+(gen_random_uuid(), 'Programming Lab', 'Specialized programming laboratory with advanced hardware', 'Building A, Second Floor', 25, NOW());
 
 -- =============================================================================
 -- STEP 3: CREATE TEST INSTRUCTORS
 -- =============================================================================
 
 -- Create test instructors (password: instructor123)
-INSERT INTO users (id, email, password, role, first_name, last_name, created_at, updated_at) VALUES
-(gen_random_uuid(), 'john.smith@school.edu', '$2b$10$/scyFshOr/ZLv.Cgebyu3OYYbQLxnkxCKzHCEM2RHBz2URtDDTbcK', 'instructor', 'John', 'Smith', NOW(), NOW()),
-(gen_random_uuid(), 'sarah.johnson@school.edu', '$2b$10$/scyFshOr/ZLv.Cgebyu3OYYbQLxnkxCKzHCEM2RHBz2URtDDTbcK', 'instructor', 'Sarah', 'Johnson', NOW(), NOW()),
-(gen_random_uuid(), 'mike.davis@school.edu', '$2b$10$/scyFshOr/ZLv.Cgebyu3OYYbQLxnkxCKzHCEM2RHBz2URtDDTbcK', 'instructor', 'Mike', 'Davis', NOW(), NOW());
+INSERT INTO users (id, email, password, role, first_name, last_name, created_at) VALUES
+(gen_random_uuid(), 'john.smith@school.edu', '$2b$10$/scyFshOr/ZLv.Cgebyu3OYYbQLxnkxCKzHCEM2RHBz2URtDDTbcK', 'instructor', 'John', 'Smith', NOW()),
+(gen_random_uuid(), 'sarah.johnson@school.edu', '$2b$10$/scyFshOr/ZLv.Cgebyu3OYYbQLxnkxCKzHCEM2RHBz2URtDDTbcK', 'instructor', 'Sarah', 'Johnson', NOW()),
+(gen_random_uuid(), 'mike.davis@school.edu', '$2b$10$/scyFshOr/ZLv.Cgebyu3OYYbQLxnkxCKzHCEM2RHBz2URtDDTbcK', 'instructor', 'Mike', 'Davis', NOW());
 
 -- =============================================================================
 -- STEP 4: CREATE TEST STUDENTS
 -- =============================================================================
 
 -- Create test students (password: student123)
-INSERT INTO users (id, email, password, role, first_name, last_name, created_at, updated_at) VALUES
-(gen_random_uuid(), 'alice.anderson@student.edu', '$2b$10$ojDxT.4ExDogOOjxjotMdOg7dRDhNpjNevQUDf/fH0Z2pJbcBCAAm', 'student', 'Alice', 'Anderson', NOW(), NOW()),
-(gen_random_uuid(), 'bob.brown@student.edu', '$2b$10$ojDxT.4ExDogOOjxjotMdOg7dRDhNpjNevQUDf/fH0Z2pJbcBCAAm', 'student', 'Bob', 'Brown', NOW(), NOW()),
-(gen_random_uuid(), 'carol.clark@student.edu', '$2b$10$ojDxT.4ExDogOOjxjotMdOg7dRDhNpjNevQUDf/fH0Z2pJbcBCAAm', 'student', 'Carol', 'Clark', NOW(), NOW()),
-(gen_random_uuid(), 'david.davis@student.edu', '$2b$10$ojDxT.4ExDogOOjxjotMdOg7dRDhNpjNevQUDf/fH0Z2pJbcBCAAm', 'student', 'David', 'Davis', NOW(), NOW()),
-(gen_random_uuid(), 'eva.evans@student.edu', '$2b$10$ojDxT.4ExDogOOjxjotMdOg7dRDhNpjNevQUDf/fH0Z2pJbcBCAAm', 'student', 'Eva', 'Evans', NOW(), NOW());
+INSERT INTO users (id, email, password, role, first_name, last_name, created_at) VALUES
+(gen_random_uuid(), 'alice.anderson@student.edu', '$2b$10$ojDxT.4ExDogOOjxjotMdOg7dRDhNpjNevQUDf/fH0Z2pJbcBCAAm', 'student', 'Alice', 'Anderson', NOW()),
+(gen_random_uuid(), 'bob.brown@student.edu', '$2b$10$ojDxT.4ExDogOOjxjotMdOg7dRDhNpjNevQUDf/fH0Z2pJbcBCAAm', 'student', 'Bob', 'Brown', NOW()),
+(gen_random_uuid(), 'carol.clark@student.edu', '$2b$10$ojDxT.4ExDogOOjxjotMdOg7dRDhNpjNevQUDf/fH0Z2pJbcBCAAm', 'student', 'Carol', 'Clark', NOW()),
+(gen_random_uuid(), 'david.davis@student.edu', '$2b$10$ojDxT.4ExDogOOjxjotMdOg7dRDhNpjNevQUDf/fH0Z2pJbcBCAAm', 'student', 'David', 'Davis', NOW()),
+(gen_random_uuid(), 'eva.evans@student.edu', '$2b$10$ojDxT.4ExDogOOjxjotMdOg7dRDhNpjNevQUDf/fH0Z2pJbcBCAAm', 'student', 'Eva', 'Evans', NOW());
 
 -- =============================================================================
 -- STEP 5: CREATE COMPUTERS FOR LABS

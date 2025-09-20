@@ -1,6 +1,6 @@
 -- ============================================================================
--- QUICK SQL SETUP FOR LABMANAGER
--- Copy and paste these commands into your Neon database console
+-- CORRECTED SQL FOR LABMANAGER (Fixed schema issues)
+-- Copy and paste this into your Neon database console
 -- ============================================================================
 
 -- 1. CREATE ADMIN USER (Login: admin@labmanager.com / admin123)
@@ -32,7 +32,7 @@ VALUES (
   NOW()
 );
 
--- 4. CREATE TEST STUDENTS (Login: alice.anderson@student.edu / student123, etc.)
+-- 4. CREATE TEST STUDENTS (All use password: student123)
 INSERT INTO users (id, email, password, role, first_name, last_name, created_at) VALUES
 (gen_random_uuid(), 'alice.anderson@student.edu', '$2b$10$ojDxT.4ExDogOOjxjotMdOg7dRDhNpjNevQUDf/fH0Z2pJbcBCAAm', 'student', 'Alice', 'Anderson', NOW()),
 (gen_random_uuid(), 'bob.brown@student.edu', '$2b$10$ojDxT.4ExDogOOjxjotMdOg7dRDhNpjNevQUDf/fH0Z2pJbcBCAAm', 'student', 'Bob', 'Brown', NOW()),
@@ -42,28 +42,3 @@ INSERT INTO users (id, email, password, role, first_name, last_name, created_at)
 SELECT 'Users created:' as info, COUNT(*) as count FROM users
 UNION ALL
 SELECT 'Labs created:', COUNT(*) FROM labs;
-
--- ============================================================================
--- LOGIN CREDENTIALS AFTER RUNNING THIS SQL:
--- ============================================================================
-/*
-ADMIN:
-Email: admin@labmanager.com
-Password: admin123
-
-INSTRUCTOR:
-Email: john.smith@school.edu
-Password: instructor123
-
-STUDENTS:
-Email: alice.anderson@student.edu
-Password: student123
-
-Email: bob.brown@student.edu
-Password: student123
-
-Email: carol.clark@student.edu
-Password: student123
-
-⚠️  CHANGE ADMIN PASSWORD IMMEDIATELY AFTER FIRST LOGIN!
-*/
