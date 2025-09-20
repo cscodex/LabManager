@@ -1,171 +1,30 @@
 -- ============================================================================
--- ADD CLASSES TO EXISTING LABMANAGER SETUP
--- Run this AFTER you've already created users and labs
--- ============================================================================
-
--- GRADE 11 CLASSES
-
--- Non Medical (NM) - Sections A to F (6 classes)
-INSERT INTO classes (id, name, code, grade_level, trade_type, section, display_name, lab_id, instructor_id, semester, year, is_active, created_at)
-SELECT
-  gen_random_uuid(),
-  '11 NM ' || section_letter,
-  'CS11NM' || section_letter,
-  11,
-  'NM',
-  section_letter,
-  '11 NM ' || section_letter,
-  (SELECT id FROM labs ORDER BY created_at LIMIT 1),
-  (SELECT id FROM users WHERE role = 'instructor' ORDER BY created_at LIMIT 1),
-  'Fall',
-  2024,
-  true,
-  NOW()
-FROM (VALUES ('A'), ('B'), ('C'), ('D'), ('E'), ('F')) AS sections(section_letter);
-
--- Medical (M) - Sections G to H (2 classes)
-INSERT INTO classes (id, name, code, grade_level, trade_type, section, display_name, lab_id, instructor_id, semester, year, is_active, created_at)
-SELECT
-  gen_random_uuid(),
-  '11 M ' || section_letter,
-  'CS11M' || section_letter,
-  11,
-  'M',
-  section_letter,
-  '11 M ' || section_letter,
-  (SELECT id FROM labs ORDER BY created_at OFFSET 1 LIMIT 1),
-  (SELECT id FROM users WHERE role = 'instructor' ORDER BY created_at OFFSET 1 LIMIT 1),
-  'Fall',
-  2024,
-  true,
-  NOW()
-FROM (VALUES ('G'), ('H')) AS sections(section_letter);
-
--- Commerce (C) - Sections I to J (2 classes)
-INSERT INTO classes (id, name, code, grade_level, trade_type, section, display_name, lab_id, instructor_id, semester, year, is_active, created_at)
-SELECT
-  gen_random_uuid(),
-  '11 C ' || section_letter,
-  'CS11C' || section_letter,
-  11,
-  'C',
-  section_letter,
-  '11 C ' || section_letter,
-  (SELECT id FROM labs ORDER BY created_at LIMIT 1),
-  (SELECT id FROM users WHERE role = 'instructor' ORDER BY created_at LIMIT 1),
-  'Fall',
-  2024,
-  true,
-  NOW()
-FROM (VALUES ('I'), ('J')) AS sections(section_letter);
-
--- GRADE 12 CLASSES
-
--- Non Medical (NM) - Sections A to F (6 classes)
-INSERT INTO classes (id, name, code, grade_level, trade_type, section, display_name, lab_id, instructor_id, semester, year, is_active, created_at)
-SELECT
-  gen_random_uuid(),
-  '12 NM ' || section_letter,
-  'CS12NM' || section_letter,
-  12,
-  'NM',
-  section_letter,
-  '12 NM ' || section_letter,
-  (SELECT id FROM labs ORDER BY created_at LIMIT 1),
-  (SELECT id FROM users WHERE role = 'instructor' ORDER BY created_at LIMIT 1),
-  'Fall',
-  2024,
-  true,
-  NOW()
-FROM (VALUES ('A'), ('B'), ('C'), ('D'), ('E'), ('F')) AS sections(section_letter);
-
--- Medical (M) - Sections G to H (2 classes)
-INSERT INTO classes (id, name, code, grade_level, trade_type, section, display_name, lab_id, instructor_id, semester, year, is_active, created_at)
-SELECT
-  gen_random_uuid(),
-  '12 M ' || section_letter,
-  'CS12M' || section_letter,
-  12,
-  'M',
-  section_letter,
-  '12 M ' || section_letter,
-  (SELECT id FROM labs ORDER BY created_at OFFSET 1 LIMIT 1),
-  (SELECT id FROM users WHERE role = 'instructor' ORDER BY created_at OFFSET 1 LIMIT 1),
-  'Fall',
-  2024,
-  true,
-  NOW()
-FROM (VALUES ('G'), ('H')) AS sections(section_letter);
-
--- Commerce (C) - Sections I to J (2 classes)
-INSERT INTO classes (id, name, code, grade_level, trade_type, section, display_name, lab_id, instructor_id, semester, year, is_active, created_at)
-SELECT 
-  gen_random_uuid(),
-  '12 C ' || section_letter,
-  'CS12C' || section_letter,
-  12,
-  'C',
-  section_letter,
-  '12 C ' || section_letter,
-  (SELECT id FROM labs ORDER BY created_at LIMIT 1),
-  (SELECT id FROM users WHERE role = 'instructor' ORDER BY created_at LIMIT 1),
-  'Fall',
-  2024,
-  true,
-  NOW()
-FROM (VALUES ('I'), ('J')) AS sections(section_letter);
-
--- VERIFY CLASSES CREATED
-SELECT 
-  'Total classes created:' as info, 
-  COUNT(*) as count 
-FROM classes
-UNION ALL
-SELECT 
-  'Classes by grade/trade:',
-  COUNT(*)
-FROM classes
-GROUP BY grade_level, trade_type
-ORDER BY info;
-
--- VIEW ALL CLASSES
-SELECT
-  display_name,
-  code,
-  grade_level,
-  trade_type,
-  section,
-  semester,
-  year
-FROM classes
-ORDER BY grade_level, trade_type, section;
-
--- ============================================================================
 -- ADD STUDENTS TO EACH SECTION (10 per section, 6 girls : 4 boys ratio)
+-- Total: 200 students (20 sections × 10 students each)
 -- ============================================================================
 
 -- Create students for Grade 11 Non Medical sections (A-F)
 WITH student_data AS (
-  SELECT
+  SELECT 
     c.id as class_id,
     c.grade_level,
     c.trade_type,
     c.section,
     s.student_num,
-    CASE
+    CASE 
       WHEN s.student_num <= 6 THEN 'female'
       ELSE 'male'
     END as gender,
-    CASE
-      WHEN s.student_num <= 6 THEN
+    CASE 
+      WHEN s.student_num <= 6 THEN 
         (ARRAY['Aisha', 'Fatima', 'Zainab', 'Khadija', 'Maryam', 'Ayesha', 'Sana', 'Hira', 'Noor', 'Rabia'])[s.student_num]
-      ELSE
+      ELSE 
         (ARRAY['Ahmed', 'Ali', 'Hassan', 'Omar', 'Usman', 'Bilal', 'Hamza', 'Saad', 'Zain', 'Faisal'])[s.student_num - 6]
     END as first_name,
-    CASE
-      WHEN s.student_num <= 6 THEN
+    CASE 
+      WHEN s.student_num <= 6 THEN 
         (ARRAY['Khan', 'Sheikh', 'Ahmad', 'Ali', 'Hassan', 'Malik', 'Butt', 'Chaudhry', 'Awan', 'Qureshi'])[s.student_num]
-      ELSE
+      ELSE 
         (ARRAY['Khan', 'Sheikh', 'Ahmad', 'Ali', 'Hassan', 'Malik', 'Butt', 'Chaudhry', 'Awan', 'Qureshi'])[s.student_num - 6]
     END as last_name
   FROM classes c
@@ -173,7 +32,7 @@ WITH student_data AS (
   WHERE c.grade_level = 11 AND c.trade_type = 'NM'
 )
 INSERT INTO users (id, email, password, first_name, last_name, role, student_id, gender, phone, address, created_at)
-SELECT
+SELECT 
   gen_random_uuid(),
   LOWER(first_name || '.' || last_name || '.' || grade_level || trade_type || section || student_num || '@student.edu'),
   'student123',
@@ -189,26 +48,26 @@ FROM student_data;
 
 -- Create students for Grade 11 Medical sections (G-H)
 WITH student_data AS (
-  SELECT
+  SELECT 
     c.id as class_id,
     c.grade_level,
     c.trade_type,
     c.section,
     s.student_num,
-    CASE
+    CASE 
       WHEN s.student_num <= 6 THEN 'female'
       ELSE 'male'
     END as gender,
-    CASE
-      WHEN s.student_num <= 6 THEN
+    CASE 
+      WHEN s.student_num <= 6 THEN 
         (ARRAY['Amna', 'Bushra', 'Farah', 'Hina', 'Iqra', 'Javeria', 'Kinza', 'Laiba', 'Mahnoor', 'Nimra'])[s.student_num]
-      ELSE
+      ELSE 
         (ARRAY['Adnan', 'Babar', 'Danish', 'Fahad', 'Haris', 'Imran', 'Junaid', 'Kamran', 'Luqman', 'Nabeel'])[s.student_num - 6]
     END as first_name,
-    CASE
-      WHEN s.student_num <= 6 THEN
+    CASE 
+      WHEN s.student_num <= 6 THEN 
         (ARRAY['Siddiqui', 'Ansari', 'Rizvi', 'Naqvi', 'Kazmi', 'Gillani', 'Gardezi', 'Hashmi', 'Jafri', 'Bukhari'])[s.student_num]
-      ELSE
+      ELSE 
         (ARRAY['Siddiqui', 'Ansari', 'Rizvi', 'Naqvi', 'Kazmi', 'Gillani', 'Gardezi', 'Hashmi', 'Jafri', 'Bukhari'])[s.student_num - 6]
     END as last_name
   FROM classes c
@@ -216,7 +75,7 @@ WITH student_data AS (
   WHERE c.grade_level = 11 AND c.trade_type = 'M'
 )
 INSERT INTO users (id, email, password, first_name, last_name, role, student_id, gender, phone, address, created_at)
-SELECT
+SELECT 
   gen_random_uuid(),
   LOWER(first_name || '.' || last_name || '.' || grade_level || trade_type || section || student_num || '@student.edu'),
   'student123',
@@ -232,26 +91,26 @@ FROM student_data;
 
 -- Create students for Grade 11 Commerce sections (I-J)
 WITH student_data AS (
-  SELECT
+  SELECT 
     c.id as class_id,
     c.grade_level,
     c.trade_type,
     c.section,
     s.student_num,
-    CASE
+    CASE 
       WHEN s.student_num <= 6 THEN 'female'
       ELSE 'male'
     END as gender,
-    CASE
-      WHEN s.student_num <= 6 THEN
+    CASE 
+      WHEN s.student_num <= 6 THEN 
         (ARRAY['Palwasha', 'Qurat', 'Rida', 'Sidra', 'Tayyaba', 'Urooj', 'Warda', 'Yumna', 'Zahra', 'Aliza'])[s.student_num]
-      ELSE
+      ELSE 
         (ARRAY['Osama', 'Qasim', 'Rehan', 'Shahzad', 'Talha', 'Usama', 'Waleed', 'Yasir', 'Zubair', 'Arslan'])[s.student_num - 6]
     END as first_name,
-    CASE
-      WHEN s.student_num <= 6 THEN
+    CASE 
+      WHEN s.student_num <= 6 THEN 
         (ARRAY['Tariq', 'Iqbal', 'Hussain', 'Abbas', 'Raza', 'Shah', 'Mirza', 'Baig', 'Dar', 'Lone'])[s.student_num]
-      ELSE
+      ELSE 
         (ARRAY['Tariq', 'Iqbal', 'Hussain', 'Abbas', 'Raza', 'Shah', 'Mirza', 'Baig', 'Dar', 'Lone'])[s.student_num - 6]
     END as last_name
   FROM classes c
@@ -259,7 +118,7 @@ WITH student_data AS (
   WHERE c.grade_level = 11 AND c.trade_type = 'C'
 )
 INSERT INTO users (id, email, password, first_name, last_name, role, student_id, gender, phone, address, created_at)
-SELECT
+SELECT 
   gen_random_uuid(),
   LOWER(first_name || '.' || last_name || '.' || grade_level || trade_type || section || student_num || '@student.edu'),
   'student123',
@@ -429,45 +288,17 @@ WHERE u.role = 'student'
 -- SUMMARY REPORT
 -- ============================================================================
 
--- Count students by grade, trade, and gender
-SELECT
-  'STUDENT SUMMARY BY GRADE AND TRADE' as report_type,
-  c.grade_level,
-  c.trade_type,
-  u.gender,
-  COUNT(*) as student_count
-FROM users u
-JOIN enrollments e ON u.id = e.student_id
-JOIN classes c ON e.class_id = c.id
-WHERE u.role = 'student'
-GROUP BY c.grade_level, c.trade_type, u.gender
-ORDER BY c.grade_level, c.trade_type, u.gender;
-
--- Count students by section
-SELECT
-  'STUDENT SUMMARY BY SECTION' as report_type,
-  c.display_name,
-  c.section,
-  COUNT(*) as student_count,
-  SUM(CASE WHEN u.gender = 'female' THEN 1 ELSE 0 END) as girls,
-  SUM(CASE WHEN u.gender = 'male' THEN 1 ELSE 0 END) as boys
-FROM users u
-JOIN enrollments e ON u.id = e.student_id
-JOIN classes c ON e.class_id = c.id
-WHERE u.role = 'student'
-GROUP BY c.id, c.display_name, c.section
-ORDER BY c.grade_level, c.trade_type, c.section;
-
 -- Overall summary
 SELECT
   'OVERALL SUMMARY' as report_type,
-  COUNT(DISTINCT u.id) as total_students,
+  COUNT(DISTINCT CASE WHEN u.role = 'student' THEN u.id END) as total_students,
   COUNT(DISTINCT c.id) as total_classes,
-  SUM(CASE WHEN u.gender = 'female' THEN 1 ELSE 0 END) as total_girls,
-  SUM(CASE WHEN u.gender = 'male' THEN 1 ELSE 0 END) as total_boys,
-  ROUND(SUM(CASE WHEN u.gender = 'female' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) as girls_percentage,
-  ROUND(SUM(CASE WHEN u.gender = 'male' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) as boys_percentage
+  SUM(CASE WHEN u.gender = 'female' AND u.role = 'student' THEN 1 ELSE 0 END) as total_girls,
+  SUM(CASE WHEN u.gender = 'male' AND u.role = 'student' THEN 1 ELSE 0 END) as total_boys,
+  ROUND(SUM(CASE WHEN u.gender = 'female' AND u.role = 'student' THEN 1 ELSE 0 END) * 100.0 /
+        NULLIF(COUNT(CASE WHEN u.role = 'student' THEN 1 END), 0), 1) as girls_percentage,
+  ROUND(SUM(CASE WHEN u.gender = 'male' AND u.role = 'student' THEN 1 ELSE 0 END) * 100.0 /
+        NULLIF(COUNT(CASE WHEN u.role = 'student' THEN 1 END), 0), 1) as boys_percentage
 FROM users u
-JOIN enrollments e ON u.id = e.student_id
-JOIN classes c ON e.class_id = c.id
-WHERE u.role = 'student';
+LEFT JOIN enrollments e ON u.id = e.student_id
+LEFT JOIN classes c ON e.class_id = c.id;
