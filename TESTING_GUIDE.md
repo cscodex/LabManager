@@ -202,15 +202,20 @@ POST /api/admin/seed
 # Test health
 curl https://your-app.onrender.com/api/health
 
-# Test login (replace with your app URL)
+# STEP 1: Bootstrap initial admin user (if no users exist)
+curl -X POST https://your-app.onrender.com/api/bootstrap \
+  -H "Content-Type: application/json"
+
+# STEP 2: Test login with admin credentials
 curl -X POST https://your-app.onrender.com/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@labmanager.com","password":"admin123"}'
+  -d '{"email":"admin@labmanager.com","password":"admin123"}' \
+  -c cookies.txt
 
-# Create test data
+# STEP 3: Create test data (requires login session)
 curl -X POST https://your-app.onrender.com/api/admin/seed \
   -H "Content-Type: application/json" \
-  -b "session_cookie_if_needed"
+  -b cookies.txt
 ```
 
 ## 🔐 Security Testing

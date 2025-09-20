@@ -2180,6 +2180,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bootstrap endpoint - creates initial admin user (no auth required)
+  app.post('/api/bootstrap', async (req, res) => {
+    try {
+      // Check if any users exist
+      const existingUsers = await storage.getUsersByRole('instructor');
+
+      if (existingUsers.length > 0) {
+        return res.status(400).json({
+          error: 'Bootstrap not needed',
+          message: 'Admin users already exist. Use /api/admin/seed instead.'
+        });
+      }
+
+      // Create initial admin user
+      const adminUser = await storage.createUserWithRole({
+        email: "admin@labmanager.com",
+        password: "admin123",
+        firstName: "System",
+        lastName: "Administrator",
+        role: "instructor"
+      });
+
+      res.status(201).json({
+        message: 'Bootstrap completed successfully',
+        admin: {
+          email: adminUser.email,
+          id: adminUser.id
+        },
+        nextSteps: [
+          'Login with admin@labmanager.com / admin123',
+          'Change the default password immediately',
+          'Use POST /api/admin/seed to create sample data'
+        ]
+      });
+    } catch (error: any) {
+      console.error('Error during bootstrap:', error);
+      res.status(500).json({ error: 'Bootstrap failed', details: error.message });
+    }
+  });
+
   // Admin/Development endpoints
   app.post('/api/admin/seed', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
