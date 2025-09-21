@@ -396,13 +396,21 @@ function CreateGroupForm({
   // Helper functions to filter data based on selections
   const getAvailableStudents = () => {
     if (!selectedClassId) return [];
-    
-    // Get students enrolled in the selected class
-    const classEnrollments = enrollments.filter(e => e.classId === selectedClassId && e.isActive);
-    const enrolledStudentIds = classEnrollments.map(e => e.studentId);
-    
+
+    // Find the selected class profile
+    const cls = classes.find(c => c.id === selectedClassId);
+    if (!cls) return [];
+
+    // Students whose profile matches the selected class (profile-based assignment)
+    const classStudents = students.filter(s =>
+      s.role === 'student' &&
+      s.gradeLevel === cls.gradeLevel &&
+      s.tradeType === cls.tradeType &&
+      s.section === cls.section
+    );
+
     // Get students already in groups for this class
-    const studentsInGroups = new Set();
+    const studentsInGroups = new Set<string>();
     groups.forEach(group => {
       if (group.classId === selectedClassId && group.members) {
         group.members.forEach(member => {
@@ -410,26 +418,22 @@ function CreateGroupForm({
         });
       }
     });
-    
-    // Return students enrolled in class but not in any group
-    return students.filter(student => 
-      enrolledStudentIds.includes(student.id) && 
-      student.role === 'student' &&
-      !studentsInGroups.has(student.id)
-    );
+
+    // Return students matching class profile but not in any group
+    return classStudents.filter(student => !studentsInGroups.has(student.id));
   };
 
   const getAvailableComputers = () => {
     if (!selectedLabId) return [];
-    
-    // Get computers in the selected lab
-    const labComputers = computers.filter(c => c.labId === selectedLabId && c.isActive);
-    
+
+    // Get computers in the selected lab that are available
+    const labComputers = computers.filter(c => c.labId === selectedLabId && c.status === 'available');
+
     // Get computers already assigned to groups
     const assignedComputerIds = new Set(
       groups.filter(g => g.computerId).map(g => g.computerId)
     );
-    
+
     // Return unassigned computers from selected lab
     return labComputers.filter(c => !assignedComputerIds.has(c.id));
   };
@@ -1029,9 +1033,9 @@ function ReassignComputerDialog({
   const queryClient = useQueryClient();
 
   // Get available computers for selected lab
-  const availableComputers = selectedLabId 
+  const availableComputers = selectedLabId
     ? computers.filter(c => {
-        if (c.labId !== selectedLabId || !c.isActive) return false;
+        if (c.labId !== selectedLabId || c.status !== 'available') return false;
         // Exclude computers already assigned to other groups
         const assignedComputerIds = groups
           .filter(g => g.id !== group.id && g.computerId)

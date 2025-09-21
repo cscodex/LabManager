@@ -1324,13 +1324,19 @@ export function StudentRoster() {
                           {(() => {
                             try {
                               const assignedClass = getStudentClass(student);
-                              return assignedClass ? (
-                                <Badge variant="default" className="text-xs">
-                                  {assignedClass.displayName || 'Unknown Class'}
-                                </Badge>
-                              ) : (
-                                <Badge variant="outline" className="text-xs text-muted-foreground">
-                                  {getClassDisplayNameFromProfile(student.gradeLevel, student.tradeType, student.section)}
+                              const display = getClassDisplayNameFromProfile(student.gradeLevel, student.tradeType, student.section);
+                              if (assignedClass) {
+                                return (
+                                  <Badge variant="default" className="text-xs">
+                                    {assignedClass.displayName || display}
+                                  </Badge>
+                                );
+                              }
+                              // If profile is complete but no class record matched, still show in primary style
+                              const isIncomplete = display === 'Incomplete Profile';
+                              return (
+                                <Badge variant={isIncomplete ? 'outline' : 'default'} className={`text-xs ${isIncomplete ? 'text-muted-foreground' : ''}`}>
+                                  {display}
                                 </Badge>
                               );
                             } catch (error) {
