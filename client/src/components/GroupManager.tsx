@@ -426,8 +426,8 @@ function CreateGroupForm({
   const getAvailableComputers = () => {
     if (!selectedLabId) return [];
 
-    // Get computers in the selected lab that are available
-    const labComputers = computers.filter(c => c.labId === selectedLabId && c.status === 'available');
+    // Get computers in the selected lab that are available (treat missing status as available for legacy data)
+    const labComputers = computers.filter(c => c.labId === selectedLabId && (c.status === 'available' || !('status' in c) || (c as any).status == null));
 
     // Get computers already assigned to groups
     const assignedComputerIds = new Set(
@@ -1035,7 +1035,9 @@ function ReassignComputerDialog({
   // Get available computers for selected lab
   const availableComputers = selectedLabId
     ? computers.filter(c => {
-        if (c.labId !== selectedLabId || c.status !== 'available') return false;
+        const isInLab = c.labId === selectedLabId;
+        const isAvailable = (c as any).status == null || c.status === 'available';
+        if (!isInLab || !isAvailable) return false;
         // Exclude computers already assigned to other groups
         const assignedComputerIds = groups
           .filter(g => g.id !== group.id && g.computerId)

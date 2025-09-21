@@ -330,7 +330,8 @@ export function StudentRoster() {
   // Mutations
   const addStudentMutation = useMutation({
     mutationFn: async (data: AddStudentFormData) => {
-      const response = await apiRequest("POST", "/api/students", data);
+      // Server requires password; default it here for UI-created accounts
+      const response = await apiRequest("POST", "/api/students", { ...data, password: 'student123' });
       return await response.json();
     },
     onSuccess: () => {
