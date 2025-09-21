@@ -1,3 +1,4 @@
+import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -164,35 +165,54 @@ export function StudentRoster() {
   const hasError = studentsError || enrollmentsError;
 
   // Filter students based on search term and filters
-  const filteredStudents = students.filter((student: User) => {
-    // Search filter
-    const searchString = `${student.firstName || ''} ${student.lastName || ''} ${student.email || ''} ${student.id || ''} ${student.studentId || ''}`;
-    const matchesSearch = searchString.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredStudents = React.useMemo(() => {
+    if (!students || !Array.isArray(students)) {
+      return [];
+    }
 
-    // Grade level filter (for student properties)
-    const matchesGrade = filterGrade === 'all' || student.gradeLevel?.toString() === filterGrade;
+    return students.filter((student: User) => {
+      try {
+        // Search filter
+        const searchString = `${student.firstName || ''} ${student.lastName || ''} ${student.email || ''} ${student.id || ''} ${student.studentId || ''}`;
+        const matchesSearch = searchString.toLowerCase().includes(searchTerm.toLowerCase());
 
-    // Trade type filter (for student properties)
-    const matchesTrade = filterTrade === 'all' || student.tradeType === filterTrade;
+        // Grade level filter (for student properties)
+        const matchesGrade = filterGrade === 'all' || student.gradeLevel?.toString() === filterGrade;
 
-    // Section filter (for student properties)
-    const matchesSection = filterSection === 'all' || student.section === filterSection;
+        // Trade type filter (for student properties)
+        const matchesTrade = filterTrade === 'all' || student.tradeType === filterTrade;
 
-    // Find student's enrollment for enrollment-based filters
-    const studentEnrollment = enrollments.find(e => e.student?.id === student.id);
+        // Section filter (for student properties)
+        const matchesSection = filterSection === 'all' || student.section === filterSection;
 
-    // Class filter (based on student profile) - supports multiple selection
-    const studentClass = getStudentClass(student);
-    const matchesClass = filterClasses.length === 0 || (studentClass?.id && filterClasses.includes(studentClass.id));
+        // Find student's enrollment for enrollment-based filters
+        const studentEnrollment = enrollments?.find(e => e.student?.id === student.id);
 
-    // Lab filter (based on enrollment)
-    const matchesLab = filterLab === 'all' || (studentEnrollment && studentEnrollment.lab?.name === filterLab);
+        // Class filter (based on student profile) - supports multiple selection
+        let matchesClass = true;
+        if (filterClasses.length > 0) {
+          try {
+            const studentClass = getStudentClass(student);
+            matchesClass = studentClass?.id && filterClasses.includes(studentClass.id);
+          } catch (error) {
+            console.error('Error in class filter:', error);
+            matchesClass = false;
+          }
+        }
 
-    // Group filter (based on enrollment)
-    const matchesGroup = filterGroup === 'all' || (studentEnrollment && studentEnrollment.group?.name === filterGroup);
+        // Lab filter (based on enrollment)
+        const matchesLab = filterLab === 'all' || (studentEnrollment && studentEnrollment.lab?.name === filterLab);
 
-    return matchesSearch && matchesGrade && matchesTrade && matchesSection && matchesClass && matchesLab && matchesGroup;
-  });
+        // Group filter (based on enrollment)
+        const matchesGroup = filterGroup === 'all' || (studentEnrollment && studentEnrollment.group?.name === filterGroup);
+
+        return matchesSearch && matchesGrade && matchesTrade && matchesSection && matchesClass && matchesLab && matchesGroup;
+      } catch (error) {
+        console.error('Error filtering student:', error, student);
+        return false;
+      }
+    });
+  }, [students, searchTerm, filterGrade, filterTrade, filterSection, filterClasses, filterLab, filterGroup, enrollments]);
 
   // Pagination logic
   const totalItems = filteredStudents.length;
@@ -260,11 +280,16 @@ export function StudentRoster() {
   }, [searchTerm, filterClasses, filterLab, filterGroup, filterGrade, filterTrade, filterSection]);
 
   const handleStudentSelect = (studentId: string) => {
-    setSelectedStudents(prev => 
-      prev.includes(studentId) 
-        ? prev.filter(id => id !== studentId)
-        : [...prev, studentId]
-    );
+    setSelectedStudents(prev => {
+      try {
+        return prev.includes(studentId)
+          ? prev.filter(id => id !== studentId)
+          : [...prev, studentId];
+      } catch (error) {
+        console.error('Error selecting student:', error);
+        return prev;
+      }
+    });
   };
 
   const handleSelectAll = () => {
@@ -548,9 +573,14 @@ export function StudentRoster() {
     }
 
     // Check if any selected students have enrollments
-    const studentsWithEnrollments = selectedStudents.filter(studentId =>
-      enrollments.some(e => e.student?.id === studentId)
-    );
+    const studentsWithEnrollments = selectedStudents.filter(studentId => {
+      try {
+        return enrollments?.some(e => e.student?.id === studentId) || false;
+      } catch (error) {
+        console.error('Error checking enrollments:', error);
+        return false;
+      }
+    });
 
     if (studentsWithEnrollments.length > 0) {
       toast({
@@ -592,9 +622,14 @@ export function StudentRoster() {
     }
 
     // Check if any selected students are already enrolled
-    const alreadyEnrolled = selectedStudents.filter(studentId =>
-      enrollments.some(e => e.student?.id === studentId && e.isActive)
-    );
+    const alreadyEnrolled = selectedStudents.filter(studentId => {
+      try {
+        return enrollments?.some(e => e.student?.id === studentId && e.isActive) || false;
+      } catch (error) {
+        console.error('Error checking active enrollments:', error);
+        return false;
+      }
+    });
 
     if (alreadyEnrolled.length > 0) {
       toast({

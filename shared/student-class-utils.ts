@@ -24,20 +24,30 @@ export interface ClassStudentList {
  * Get the class that a student should be assigned to based on their profile
  */
 export function getStudentAssignedClass(
-  student: User, 
+  student: User,
   availableClasses: Class[]
 ): Class | null {
+  // Safety checks
+  if (!student || !availableClasses || !Array.isArray(availableClasses)) {
+    return null;
+  }
+
   // Students must have complete profile for class assignment
   if (!student.gradeLevel || !student.tradeType || !student.section) {
     return null;
   }
 
-  // Find matching class
-  return availableClasses.find(cls => 
-    cls.gradeLevel === student.gradeLevel &&
-    cls.tradeType === student.tradeType &&
-    cls.section === student.section
-  ) || null;
+  try {
+    // Find matching class
+    return availableClasses.find(cls =>
+      cls && cls.gradeLevel === student.gradeLevel &&
+      cls.tradeType === student.tradeType &&
+      cls.section === student.section
+    ) || null;
+  } catch (error) {
+    console.error('Error finding student assigned class:', error);
+    return null;
+  }
 }
 
 /**
@@ -47,12 +57,21 @@ export function getStudentsForClass(
   targetClass: Class,
   allStudents: User[]
 ): User[] {
-  return allStudents.filter(student =>
-    student.role === 'student' &&
-    student.gradeLevel === targetClass.gradeLevel &&
-    student.tradeType === targetClass.tradeType &&
-    student.section === targetClass.section
-  );
+  if (!targetClass || !allStudents || !Array.isArray(allStudents)) {
+    return [];
+  }
+
+  return allStudents.filter(student => {
+    try {
+      return student.role === 'student' &&
+        student.gradeLevel === targetClass.gradeLevel &&
+        student.tradeType === targetClass.tradeType &&
+        student.section === targetClass.section;
+    } catch (error) {
+      console.error('Error filtering students for class:', error);
+      return false;
+    }
+  });
 }
 
 /**
