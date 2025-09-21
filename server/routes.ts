@@ -3,11 +3,11 @@ import { createServer, type Server } from "http";
 import { z } from "zod";
 import { storage } from "./storage";
 import { setupAuth, requireAuth, requireRole } from "./auth";
-import { 
-  insertLabSchema, 
-  insertUserSchema, 
+import {
+  insertLabSchema,
+  insertUserSchema,
   insertUserWithRoleSchema,
-  insertClassSchema, 
+  insertClassSchema,
   insertComputerSchema,
   insertGroupSchema,
   insertEnrollmentSchema,
@@ -24,17 +24,17 @@ import {
 const validateSubmissionOwnership = async (submissionId: string, userId: string, userRole: string): Promise<boolean> => {
   const submission = await storage.getSubmission(submissionId);
   if (!submission) return false;
-  
+
   if (userRole === 'student') {
     return submission.studentId === userId;
   } else if (userRole === 'instructor') {
     // Instructor can access if they teach the class this assignment belongs to
     const assignment = await storage.getAssignment(submission.assignmentId);
     if (!assignment) return false;
-    
+
     const session = await storage.getSession(assignment.sessionId);
     if (!session) return false;
-    
+
     const classData = await storage.getClass(session.classId);
     return classData?.instructorId === userId;
   }
@@ -49,7 +49,7 @@ const validateGradeAccess = async (submissionId: string, userId: string, userRol
 const validateInstructorOwnsSession = async (sessionId: string, instructorId: string): Promise<boolean> => {
   const session = await storage.getSession(sessionId);
   if (!session) return false;
-  
+
   const classData = await storage.getClass(session.classId);
   return classData?.instructorId === instructorId;
 };
@@ -57,10 +57,10 @@ const validateInstructorOwnsSession = async (sessionId: string, instructorId: st
 const validateStudentEnrollment = async (studentId: string, assignmentId: string): Promise<boolean> => {
   const assignment = await storage.getAssignment(assignmentId);
   if (!assignment) return false;
-  
+
   const session = await storage.getSession(assignment.sessionId);
   if (!session) return false;
-  
+
   const enrollments = await storage.getEnrollmentsByClass(session.classId);
   return enrollments.some(enrollment => enrollment.studentId === studentId && enrollment.isActive);
 };
@@ -186,7 +186,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/classes', requireAuth, async (req, res) => {
     try {
       const { labId, instructorId, gradeLevel, tradeType } = req.query;
-      
+
       let classes;
       if (labId) {
         classes = await storage.getClassesByLab(labId as string);
@@ -197,7 +197,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         classes = await storage.getClasses();
       }
-      
+
       res.json(classes);
     } catch (error: any) {
       console.error('Error fetching classes:', error);
@@ -372,7 +372,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = insertGroupSchema.parse(req.body);
       const { studentIds, ...groupData } = validatedData;
-      
+
       let group;
       if (studentIds && studentIds.length > 0) {
         // Create group with student assignments
@@ -381,7 +381,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Create group without students
         group = await storage.createGroup(groupData);
       }
-      
+
       res.status(201).json(group);
     } catch (error: any) {
       if (error.name === 'ZodError') {
@@ -438,20 +438,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const memberSchema = z.object({
         studentId: z.string().uuid('Invalid student ID format')
       });
-      
+
       const { studentId } = memberSchema.parse(req.body);
-      
+
       // Ownership verification - ensure instructor owns the class
       const group = await storage.getGroup(req.params.id);
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
       }
-      
+
       const classInfo = await storage.getClass(group.classId);
       if (!classInfo) {
         return res.status(404).json({ error: 'Class not found' });
       }
-      
+
       if (classInfo.instructorId !== req.user!.id) {
         return res.status(403).json({ error: 'You can only modify groups in your own classes' });
       }
@@ -474,12 +474,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
       }
-      
+
       const classInfo = await storage.getClass(group.classId);
       if (!classInfo) {
         return res.status(404).json({ error: 'Class not found' });
       }
-      
+
       if (classInfo.instructorId !== req.user!.id) {
         return res.status(403).json({ error: 'You can only modify groups in your own classes' });
       }
@@ -516,6 +516,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Helper: generate a default unique studentId based on profile
+  async function generateDefaultStudentId(
+    gradeLevel?: number | null,
+    tradeType?: string | null,
+    section?: string | null
+  ): Promise<string | null> {
+    try {
+      if (!gradeLevel || !tradeType || !section) return null;
+      const prefix = `${gradeLevel}${tradeType}${section}-`;
+      const students = await storage.getUsersByRole('student');
+      let maxNum = 0;
+      for (const s of students) {
+        const id = (s as any).studentId as string | undefined;
+        if (id && id.startsWith(prefix)) {
+          const tail = id.slice(prefix.length).replace(/[^0-9]/g, '');
+          const n = parseInt(tail, 10);
+          if (!isNaN(n)) maxNum = Math.max(maxNum, n);
+        }
+      }
+      const next = String(maxNum + 1).padStart(3, '0');
+      return `${prefix}${next}`;
+    } catch (e) {
+      console.error('Failed to generate default studentId:', e);
+      return null;
+    }
+  }
+
+
   // Create individual student
   app.post('/api/students', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
@@ -525,7 +553,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       const validatedData = insertUserWithRoleSchema.parse(studentData);
-      const student = await storage.createUser(validatedData);
+
+      // Auto-generate studentId if missing and profile is complete
+      let createData: any = { ...validatedData };
+      if (!createData.studentId) {
+        const genId = await generateDefaultStudentId(createData.gradeLevel, createData.tradeType, createData.section);
+        if (genId) createData.studentId = genId;
+      }
+
+      const student = await storage.createUser(createData);
 
       // Remove password from response for security
       const { password, ...sanitizedStudent } = student;
@@ -546,7 +582,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/students/bulk-import', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const { students } = req.body;
-      
+
       if (!Array.isArray(students) || students.length === 0) {
         return res.status(400).json({ error: 'Invalid request', message: 'Students array is required and must not be empty' });
       }
@@ -567,9 +603,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             role: 'student',
             password: students[i].password || 'student123' // Default password for CSV imports
           };
-          
+
           const validatedData = insertUserWithRoleSchema.parse(studentData);
-          
+
           // Create the student
           await storage.createUser(validatedData);
           results.imported++;
@@ -599,6 +635,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('Error bulk importing students:', error);
       res.status(500).json({ error: 'Failed to import students', message: error.message });
+
+
     }
   });
 
@@ -635,6 +673,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Invalid lastName format' });
       }
 
+      // Auto-generate studentId if missing (existing had none) and profile is complete
+      try {
+        const effectiveGrade = (updateData as any).gradeLevel ?? (existingStudent as any).gradeLevel;
+        const effectiveTrade = (updateData as any).tradeType ?? (existingStudent as any).tradeType;
+        const effectiveSection = (updateData as any).section ?? (existingStudent as any).section;
+        if (!(existingStudent as any).studentId && !(updateData as any).studentId) {
+          const genId = await generateDefaultStudentId(effectiveGrade, effectiveTrade, effectiveSection);
+          if (genId) (updateData as any).studentId = genId;
+        }
+      } catch (e) {
+        console.error('Failed to auto-generate studentId on update:', e);
+      }
+
       const updatedStudent = await storage.updateUser(studentId, updateData);
 
       if (!updatedStudent) {
@@ -647,6 +698,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       if (error.name === 'ZodError') {
         return res.status(400).json({ error: 'Invalid student data', details: error.errors });
+
+
       }
       if (error.constraint && error.constraint.includes('unique')) {
         return res.status(409).json({ error: 'Email or Student ID already exists' });
@@ -693,25 +746,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userRole = req.user?.role;
       const userId = req.user?.id;
-      
+
       if (userRole === 'instructor') {
-        // Instructors can see all enrollments  
+        // Instructors can see all enrollments
         const classes = await storage.getClasses();
         const allEnrollments = [];
-        
+
         for (const cls of classes) {
           const enrollments = await storage.getEnrollmentsByClass(cls.id);
           for (const enrollment of enrollments) {
             // Get student info
             const student = await storage.getUser(enrollment.studentId);
             if (!student) continue;
-            
+
             // Get instructor info
             const instructor = await storage.getUser(cls.instructorId);
-            
+
             // Get lab info
             const lab = await storage.getLab(cls.labId);
-            
+
             // Get group and computer info if available
             let group = null;
             let computer = null;
@@ -721,10 +774,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 computer = await storage.getComputer(group.computerId);
               }
             }
-            
+
             // Count sessions for completion tracking
             const sessions = await storage.getSessionsByClass(cls.id);
-            
+
             allEnrollments.push({
               ...enrollment,
               student: {
@@ -760,24 +813,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
           }
         }
-        
+
         res.json(allEnrollments);
       } else if (userRole === 'student') {
         // Students can only see their own enrollments
         const classes = await storage.getClasses();
         const studentEnrollments = [];
-        
+
         for (const cls of classes) {
           const enrollments = await storage.getEnrollmentsByClass(cls.id);
           const studentEnrollment = enrollments.find(e => e.studentId === userId && e.isActive);
-          
+
           if (studentEnrollment) {
             // Get instructor info
             const instructor = await storage.getUser(cls.instructorId);
-            
+
             // Get lab info
             const lab = await storage.getLab(cls.labId);
-            
+
             // Get group and computer info if available
             let group = null;
             let computer = null;
@@ -787,10 +840,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 computer = await storage.getComputer(group.computerId);
               }
             }
-            
+
             // Count sessions for completion tracking
             const sessions = await storage.getSessionsByClass(cls.id);
-            
+
             studentEnrollments.push({
               ...studentEnrollment,
               student: {
@@ -826,7 +879,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
           }
         }
-        
+
         res.json(studentEnrollments);
       } else {
         res.status(403).json({ error: 'Insufficient permissions', message: 'You don\'t have permission to access this resource' });
@@ -906,7 +959,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { studentId } = req.body;
       const classId = req.params.classId;
-      
+
       if (!studentId) {
         return res.status(400).json({ error: 'Student ID is required' });
       }
@@ -928,12 +981,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.getGroupsByClass(classId),
         storage.getEnrollmentsByClass(classId)
       ]);
-      
+
       // Find a group with available spots (fix race condition)
       let selectedGroup = null;
       for (const group of groups) {
         const groupEnrollments = allEnrollments.filter(e => e.groupId === group.id);
-        
+
         if (groupEnrollments.length < group.maxMembers) {
           selectedGroup = group;
           break;
@@ -945,7 +998,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const computers = await storage.getComputersByLab(classData.labId);
         const usedComputers = new Set(groups.map(g => g.computerId).filter(Boolean));
         const availableComputer = computers.find(c => !usedComputers.has(c.id));
-        
+
         if (availableComputer) {
           selectedGroup = await storage.createGroup({
             name: `Group ${groups.length + 1}`,
@@ -1004,7 +1057,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let groupInfo = null;
       let computerInfo = null;
-      
+
       if (enrollment.groupId) {
         groupInfo = await storage.getGroup(enrollment.groupId);
         if (groupInfo && groupInfo.computerId) {
@@ -1077,11 +1130,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/sessions', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const validatedData = insertSessionSchema.parse(req.body);
-      
+
       // FUNCTIONALITY FIX: Check for scheduling conflicts before creating session
       const sessionStart = new Date(validatedData.scheduledAt);
       const sessionEnd = new Date(sessionStart.getTime() + validatedData.duration * 60000);
-      
+
       // Get class info to find the lab
       const classData = await storage.getClass(validatedData.classId);
       if (!classData) {
@@ -1090,15 +1143,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get all classes in the same lab
       const labClasses = await storage.getClassesByLab(classData.labId);
-      
+
       // Check for scheduling conflicts in the same lab
       for (const labClass of labClasses) {
         const sessions = await storage.getSessionsByClass(labClass.id);
-        
+
         for (const session of sessions) {
           const existingStart = new Date(session.scheduledAt);
           const existingEnd = new Date(existingStart.getTime() + session.duration * 60000);
-          
+
           // Check for overlap
           if (sessionStart < existingEnd && sessionEnd > existingStart) {
             return res.status(409).json({
@@ -1115,7 +1168,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
       }
-      
+
       const session = await storage.createSession(validatedData);
       res.status(201).json(session);
     } catch (error: any) {
@@ -1130,23 +1183,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch('/api/sessions/:id', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const validatedData = insertSessionSchema.partial().parse(req.body);
-      
+
       // Get the existing session to check for conflicts
       const existingSession = await storage.getSession(req.params.id);
       if (!existingSession) {
         return res.status(404).json({ error: 'Session not found' });
       }
-      
+
       // FUNCTIONALITY FIX: Check for scheduling conflicts if time-related fields are being updated
       if (validatedData.scheduledAt || validatedData.duration || validatedData.classId) {
         // Use new values if provided, otherwise use existing values
         const newScheduledAt = validatedData.scheduledAt || existingSession.scheduledAt;
         const newDuration = validatedData.duration || existingSession.duration;
         const newClassId = validatedData.classId || existingSession.classId;
-        
+
         const sessionStart = new Date(newScheduledAt);
         const sessionEnd = new Date(sessionStart.getTime() + newDuration * 60000);
-        
+
         // Get class info to find the lab
         const classData = await storage.getClass(newClassId);
         if (!classData) {
@@ -1155,18 +1208,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Get all classes in the same lab
         const labClasses = await storage.getClassesByLab(classData.labId);
-        
+
         // Check for scheduling conflicts in the same lab
         for (const labClass of labClasses) {
           const sessions = await storage.getSessionsByClass(labClass.id);
-          
+
           for (const session of sessions) {
             // Skip the session being updated
             if (session.id === req.params.id) continue;
-            
+
             const existingStart = new Date(session.scheduledAt);
             const existingEnd = new Date(existingStart.getTime() + session.duration * 60000);
-            
+
             // Check for overlap
             if (sessionStart < existingEnd && sessionEnd > existingStart) {
               return res.status(409).json({
@@ -1184,7 +1237,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
       }
-      
+
       const session = await storage.updateSession(req.params.id, validatedData);
       if (!session) {
         return res.status(404).json({ error: 'Session not found' });
@@ -1229,15 +1282,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get groups for this class
       const groups = await storage.getGroupsByClass(session.classId);
-      
+
       // OPTIMIZATION: Batch fetch all enrollments for the class once to avoid N+1 queries
       const allEnrollments = await storage.getEnrollmentsByClass(session.classId);
-      
+
       // OPTIMIZATION: Batch fetch all students for the enrollments
       const studentIds = allEnrollments.map(e => e.studentId);
       const studentPromises = studentIds.map(id => storage.getUser(id));
       const allStudents = await Promise.all(studentPromises);
-      
+
       // Create a map for quick student lookup
       const studentsMap = new Map();
       allStudents.forEach(student => {
@@ -1252,7 +1305,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
       });
-      
+
       // Process groups with optimized data fetching
       const groupsWithComputers = await Promise.all(
         groups.map(async (group) => {
@@ -1260,7 +1313,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (group.computerId) {
             computer = await storage.getComputer(group.computerId);
           }
-          
+
           // Get students for this group using the pre-fetched data
           const groupEnrollments = allEnrollments.filter(e => e.groupId === group.id);
           const groupStudents = groupEnrollments.map(enrollment => {
@@ -1304,14 +1357,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/sessions/check-conflicts', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const { classId, scheduledAt, duration } = req.body;
-      
+
       if (!classId || !scheduledAt || !duration) {
         return res.status(400).json({ error: 'classId, scheduledAt, and duration are required' });
       }
 
       const sessionStart = new Date(scheduledAt);
       const sessionEnd = new Date(sessionStart.getTime() + duration * 60000); // duration in minutes
-      
+
       // Get class info to find the lab
       const classData = await storage.getClass(classId);
       if (!classData) {
@@ -1320,16 +1373,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get all classes in the same lab
       const labClasses = await storage.getClassesByLab(classData.labId);
-      
+
       // Check for scheduling conflicts in the same lab
       const conflicts = [];
       for (const labClass of labClasses) {
         const sessions = await storage.getSessionsByClass(labClass.id);
-        
+
         for (const session of sessions) {
           const existingStart = new Date(session.scheduledAt);
           const existingEnd = new Date(existingStart.getTime() + session.duration * 60000);
-          
+
           // Check for overlap
           if (sessionStart < existingEnd && sessionEnd > existingStart) {
             conflicts.push({
@@ -1345,7 +1398,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         hasConflicts: conflicts.length > 0,
         conflicts,
-        message: conflicts.length > 0 
+        message: conflicts.length > 0
           ? `Found ${conflicts.length} scheduling conflict(s) in the same lab`
           : 'No scheduling conflicts detected'
       });
@@ -1360,7 +1413,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/timetables', requireAuth, async (req, res) => {
     try {
       const { classId, labId, dayOfWeek } = req.query;
-      
+
       let timetables;
       if (classId) {
         timetables = await storage.getTimetablesByClass(classId as string);
@@ -1371,7 +1424,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         timetables = await storage.getTimetables();
       }
-      
+
       res.json(timetables);
     } catch (error: any) {
       console.error('Error fetching timetables:', error);
@@ -1395,7 +1448,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/timetables', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const validatedData = insertTimetableSchema.parse(req.body);
-      
+
       // Check for timetable conflicts before creating
       const { hasConflicts, conflictingTimetables } = await storage.checkTimetableConflicts(
         validatedData.labId,
@@ -1405,23 +1458,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         undefined,
         validatedData.classId
       );
-      
+
       if (hasConflicts) {
         // Determine conflict type for better error messaging
         const firstConflict = conflictingTimetables[0];
         const isLabConflict = firstConflict.labId === validatedData.labId;
         const isClassConflict = firstConflict.classId === validatedData.classId;
-        
+
         return res.status(409).json({
           error: 'SCHEDULE_CONFLICT',
           conflictType: isClassConflict ? 'class' : 'lab',
           conflicts: conflictingTimetables,
-          message: isClassConflict 
+          message: isClassConflict
             ? 'This class already has a session at this time'
             : 'Lab is already occupied at this time'
         });
       }
-      
+
       const timetable = await storage.createTimetable(validatedData);
       res.status(201).json(timetable);
     } catch (error: any) {
@@ -1440,20 +1493,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // For partial updates, validate without refinement constraints
       const validatedData = req.body;
-      
+
       // Check for conflicts if time-related fields are being updated
       if (validatedData.dayOfWeek || validatedData.startTime || validatedData.endTime || validatedData.labId) {
         const currentTimetable = await storage.getTimetable(req.params.id);
         if (!currentTimetable) {
           return res.status(404).json({ error: 'Timetable entry not found' });
         }
-        
+
         const classId = validatedData.classId ?? currentTimetable.classId;
         const dayOfWeek = validatedData.dayOfWeek ?? currentTimetable.dayOfWeek;
         const startTime = validatedData.startTime ?? currentTimetable.startTime;
         const endTime = validatedData.endTime ?? currentTimetable.endTime;
         const labId = validatedData.labId ?? currentTimetable.labId;
-        
+
         const { hasConflicts, conflictingTimetables } = await storage.checkTimetableConflicts(
           labId,
           dayOfWeek,
@@ -1462,24 +1515,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
           req.params.id,
           classId
         );
-        
+
         if (hasConflicts) {
           // Determine conflict type for better error messaging
           const firstConflict = conflictingTimetables[0];
           const isLabConflict = firstConflict.labId === labId;
           const isClassConflict = firstConflict.classId === classId;
-          
+
           return res.status(409).json({
             error: 'SCHEDULE_CONFLICT',
             conflictType: isClassConflict ? 'class' : 'lab',
             conflicts: conflictingTimetables,
-            message: isClassConflict 
+            message: isClassConflict
               ? 'This class already has a session at this time'
               : 'Lab is already occupied at this time'
           });
         }
       }
-      
+
       const timetable = await storage.updateTimetable(req.params.id, validatedData);
       if (!timetable) {
         return res.status(404).json({ error: 'Timetable entry not found' });
@@ -1538,22 +1591,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = (req as any).user;
       const validatedData = insertAssignmentSchema.parse(req.body);
-      
+
       // SECURITY FIX: Validate instructor owns the session's class
       const hasAccess = await validateInstructorOwnsSession(validatedData.sessionId, user.id);
       if (!hasAccess) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: 'Access denied',
           message: 'You can only create assignments for sessions in your own classes'
         });
       }
-      
+
       // SECURITY FIX: Validate session exists
       const session = await storage.getSession(validatedData.sessionId);
       if (!session) {
         return res.status(404).json({ error: 'Session not found' });
       }
-      
+
       const assignment = await storage.createAssignment(validatedData);
       res.status(201).json(assignment);
     } catch (error: any) {
@@ -1569,21 +1622,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/assignments/:assignmentId/submissions', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const user = (req as any).user;
-      
+
       // SECURITY FIX: Validate instructor owns the assignment's session
       const assignment = await storage.getAssignment(req.params.assignmentId);
       if (!assignment) {
         return res.status(404).json({ error: 'Assignment not found' });
       }
-      
+
       const hasAccess = await validateInstructorOwnsSession(assignment.sessionId, user.id);
       if (!hasAccess) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: 'Access denied',
           message: 'You can only view submissions for your own assignments'
         });
       }
-      
+
       const submissions = await storage.getSubmissionsByAssignment(req.params.assignmentId);
       res.json(submissions);
     } catch (error: any) {
@@ -1596,11 +1649,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = (req as any).user;
       const requestedStudentId = req.params.studentId;
-      
+
       // SECURITY FIX: Students can only view their own submissions
       if (user.role === 'student') {
         if (user.id !== requestedStudentId) {
-          return res.status(403).json({ 
+          return res.status(403).json({
             error: 'Access denied',
             message: 'Students can only view their own submissions'
           });
@@ -1609,19 +1662,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // SECURITY FIX: Instructors can only view submissions from students in their classes
         const studentEnrollments = await storage.getEnrollmentsByStudent(requestedStudentId);
         const instructorClasses = await storage.getClassesByInstructor(user.id);
-        
-        const hasAccess = studentEnrollments.some(enrollment => 
+
+        const hasAccess = studentEnrollments.some(enrollment =>
           instructorClasses.some(classData => classData.id === enrollment.classId && enrollment.isActive)
         );
-        
+
         if (!hasAccess) {
-          return res.status(403).json({ 
+          return res.status(403).json({
             error: 'Access denied',
             message: 'You can only view submissions from students in your classes'
           });
         }
       }
-      
+
       const submissions = await storage.getSubmissionsByStudent(requestedStudentId);
       res.json(submissions);
     } catch (error: any) {
@@ -1633,16 +1686,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/submissions/:id', requireAuth, async (req, res) => {
     try {
       const user = (req as any).user;
-      
+
       // SECURITY FIX: Validate ownership before returning submission
       const hasAccess = await validateSubmissionOwnership(req.params.id, user.id, user.role);
       if (!hasAccess) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: 'Access denied',
           message: 'You can only view your own submissions or submissions from your students'
         });
       }
-      
+
       const submission = await storage.getSubmission(req.params.id);
       if (!submission) {
         return res.status(404).json({ error: 'Submission not found' });
@@ -1657,41 +1710,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/submissions', requireAuth, requireRole(['student']), async (req, res) => {
     try {
       const user = (req as any).user;
-      
+
       // SECURITY FIX: Parse and validate the request, but derive studentId from authenticated user
       const { studentId: _, ...submissionData } = insertSubmissionSchema.parse(req.body);
-      
+
       // SECURITY FIX: Force studentId to be the authenticated user
       const validatedData = {
         ...submissionData,
         studentId: user.id
       };
-      
+
       // SECURITY FIX: Validate student is enrolled in the class for this assignment
       const isEnrolled = await validateStudentEnrollment(user.id, validatedData.assignmentId);
       if (!isEnrolled) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: 'Access denied',
           message: 'You are not enrolled in the class for this assignment'
         });
       }
-      
+
       // SECURITY FIX: Check if assignment exists and get due date
       const assignment = await storage.getAssignment(validatedData.assignmentId);
       if (!assignment) {
         return res.status(404).json({ error: 'Assignment not found' });
       }
-      
+
       // SECURITY FIX: Server-side computation of isLate based on due date
       const submittedAt = new Date();
       const isLate = submittedAt > new Date(assignment.dueDate);
-      
+
       const submissionWithTimestamp = {
         ...validatedData,
         submittedAt,
         isLate
       };
-      
+
       const submission = await storage.createSubmission(submissionWithTimestamp);
       res.status(201).json(submission);
     } catch (error: any) {
@@ -1710,16 +1763,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/submissions/:submissionId/grades', requireAuth, async (req, res) => {
     try {
       const user = (req as any).user;
-      
+
       // SECURITY FIX: Validate access to submission before showing grades
       const hasAccess = await validateGradeAccess(req.params.submissionId, user.id, user.role);
       if (!hasAccess) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: 'Access denied',
           message: 'You can only view grades for your own submissions or your students\' submissions'
         });
       }
-      
+
       const grades = await storage.getGradesBySubmission(req.params.submissionId);
       res.json(grades);
     } catch (error: any) {
@@ -1732,15 +1785,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = (req as any).user;
       const requestedInstructorId = req.params.instructorId;
-      
+
       // SECURITY FIX: Instructors can only view their own grades
       if (user.id !== requestedInstructorId) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: 'Access denied',
           message: 'You can only view your own grades'
         });
       }
-      
+
       const grades = await storage.getGradesByInstructor(requestedInstructorId);
       res.json(grades);
     } catch (error: any) {
@@ -1753,22 +1806,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = (req as any).user;
       const validatedData = insertGradeSchema.parse(req.body);
-      
+
       // SECURITY FIX: Validate instructor can grade this submission
       const hasAccess = await validateSubmissionOwnership(validatedData.submissionId, user.id, 'instructor');
       if (!hasAccess) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: 'Access denied',
           message: 'You can only grade submissions from your own classes'
         });
       }
-      
+
       // SECURITY FIX: Validate submission exists
       const submission = await storage.getSubmission(validatedData.submissionId);
       if (!submission) {
         return res.status(404).json({ error: 'Submission not found' });
       }
-      
+
       const grade = await storage.createGrade(validatedData);
       res.status(201).json(grade);
     } catch (error: any) {
@@ -1784,22 +1837,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/analytics/lab-utilization', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const { startDate, endDate } = req.query;
-      
+
       // Get all labs
       const labs = await storage.getLabs();
-      
+
       const analyticsData = await Promise.all(labs.map(async (lab) => {
         // Get classes for this lab
         const classes = await storage.getClassesByLab(lab.id);
-        
+
         let totalSessions = 0;
         let totalStudents = 0;
         let sessionHours = 0;
-        
+
         for (const classData of classes) {
           const sessions = await storage.getSessionsByClass(classData.id);
           const enrollments = await storage.getEnrollmentsByClass(classData.id);
-          
+
           // Filter sessions by date if provided
           let filteredSessions = sessions;
           if (startDate || endDate) {
@@ -1810,12 +1863,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
               return true;
             });
           }
-          
+
           totalSessions += filteredSessions.length;
           totalStudents += enrollments.filter(e => e.isActive).length;
           sessionHours += filteredSessions.reduce((sum, s) => sum + s.duration / 60, 0);
         }
-        
+
         return {
           lab: {
             id: lab.id,
@@ -1832,7 +1885,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         };
       }));
-      
+
       res.json({
         dateRange: { startDate, endDate },
         labs: analyticsData,
@@ -1854,13 +1907,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const classId = req.params.classId;
       const { userId, role } = req as any; // From auth middleware
-      
+
       // Get class details
       const classData = await storage.getClass(classId);
       if (!classData) {
         return res.status(404).json({ error: 'Class not found' });
       }
-      
+
       // Authorization: Students can only see their own class performance, instructors can see classes they teach
       if (role === 'student') {
         const enrollment = await storage.getEnrollmentsByStudent(userId);
@@ -1870,47 +1923,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else if (role === 'instructor' && classData.instructorId !== userId) {
         return res.status(403).json({ error: 'Access denied' });
       }
-      
+
       // Get sessions, assignments, and submissions for analysis
       const sessions = await storage.getSessionsByClass(classId);
       const enrollments = await storage.getEnrollmentsByClass(classId);
-      
+
       let allAssignments = [];
       let allSubmissions = [];
       let allGrades = [];
-      
+
       for (const session of sessions) {
         const assignments = await storage.getAssignmentsBySession(session.id);
         allAssignments.push(...assignments);
-        
+
         for (const assignment of assignments) {
           const submissions = await storage.getSubmissionsByAssignment(assignment.id);
           allSubmissions.push(...submissions);
-          
+
           for (const submission of submissions) {
             const grades = await storage.getGradesBySubmission(submission.id);
             allGrades.push(...grades);
           }
         }
       }
-      
+
       // Calculate performance metrics
       const activeStudents = enrollments.filter(e => e.isActive).length;
-      const completionRate = allAssignments.length > 0 ? 
+      const completionRate = allAssignments.length > 0 ?
         Math.round((allSubmissions.length / (allAssignments.length * activeStudents)) * 100) : 0;
-      
+
       const lateSubmissions = allSubmissions.filter(s => s.isLate).length;
-      const onTimeRate = allSubmissions.length > 0 ? 
+      const onTimeRate = allSubmissions.length > 0 ?
         Math.round(((allSubmissions.length - lateSubmissions) / allSubmissions.length) * 100) : 0;
-      
-      const averageScore = allGrades.length > 0 ? 
+
+      const averageScore = allGrades.length > 0 ?
         Math.round((allGrades.reduce((sum, g) => sum + (g.score / g.maxScore) * 100, 0) / allGrades.length) * 10) / 10 : 0;
-      
+
       // Grade distribution
       const gradeDistribution = {
         A: 0, B: 0, C: 0, D: 0, F: 0
       };
-      
+
       allGrades.forEach(grade => {
         const percentage = (grade.score / grade.maxScore) * 100;
         if (percentage >= 90) gradeDistribution.A++;
@@ -1919,7 +1972,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         else if (percentage >= 60) gradeDistribution.D++;
         else gradeDistribution.F++;
       });
-      
+
       res.json({
         class: classData,
         performance: {
@@ -1947,10 +2000,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/analytics/assignment-completion', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const { classId, sessionId } = req.query;
-      
+
       let assignments = [];
       let scope = 'all';
-      
+
       if (sessionId) {
         assignments = await storage.getAssignmentsBySession(sessionId as string);
         scope = 'session';
@@ -1965,7 +2018,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Get assignments for all classes taught by this instructor
         const { userId } = req as any;
         const classes = await storage.getClassesByInstructor(userId);
-        
+
         for (const classData of classes) {
           const sessions = await storage.getSessionsByClass(classData.id);
           for (const session of sessions) {
@@ -1975,30 +2028,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         scope = 'instructor';
       }
-      
+
       // Analyze each assignment
       const assignmentAnalytics = await Promise.all(assignments.map(async (assignment) => {
         const submissions = await storage.getSubmissionsByAssignment(assignment.id);
         const grades = [];
-        
+
         for (const submission of submissions) {
           const submissionGrades = await storage.getGradesBySubmission(submission.id);
           grades.push(...submissionGrades);
         }
-        
+
         // Get expected submission count (students enrolled in the class of this assignment's session)
         const session = await storage.getSession(assignment.sessionId);
         const enrollments = session ? await storage.getEnrollmentsByClass(session.classId) : [];
         const expectedSubmissions = enrollments.filter(e => e.isActive).length;
-        
-        const completionRate = expectedSubmissions > 0 ? 
+
+        const completionRate = expectedSubmissions > 0 ?
           Math.round((submissions.length / expectedSubmissions) * 100) : 0;
-        
-        const gradingRate = submissions.length > 0 ? 
+
+        const gradingRate = submissions.length > 0 ?
           Math.round((grades.length / submissions.length) * 100) : 0;
-        
+
         const lateSubmissions = submissions.filter(s => s.isLate).length;
-        
+
         return {
           assignment: {
             id: assignment.id,
@@ -2016,11 +2069,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             lateSubmissions,
             onTimeSubmissions: submissions.length - lateSubmissions
           },
-          averageScore: grades.length > 0 ? 
+          averageScore: grades.length > 0 ?
             Math.round((grades.reduce((sum, g) => sum + (g.score / g.maxScore) * 100, 0) / grades.length) * 10) / 10 : null
         };
       }));
-      
+
       res.json({
         scope,
         totalAssignments: assignments.length,
@@ -2029,9 +2082,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           totalExpectedSubmissions: assignmentAnalytics.reduce((sum, a) => sum + a.metrics.expectedSubmissions, 0),
           totalActualSubmissions: assignmentAnalytics.reduce((sum, a) => sum + a.metrics.actualSubmissions, 0),
           totalGradedSubmissions: assignmentAnalytics.reduce((sum, a) => sum + a.metrics.gradedSubmissions, 0),
-          averageCompletionRate: assignmentAnalytics.length > 0 ? 
+          averageCompletionRate: assignmentAnalytics.length > 0 ?
             Math.round(assignmentAnalytics.reduce((sum, a) => sum + a.metrics.completionRate, 0) / assignmentAnalytics.length) : 0,
-          averageGradingRate: assignmentAnalytics.length > 0 ? 
+          averageGradingRate: assignmentAnalytics.length > 0 ?
             Math.round(assignmentAnalytics.reduce((sum, a) => sum + a.metrics.gradingRate, 0) / assignmentAnalytics.length) : 0
         }
       });
@@ -2045,75 +2098,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const studentId = req.params.studentId;
       const { userId, role } = req as any;
-      
+
       // Authorization: Students can only see their own performance, instructors can see students in their classes
       if (role === 'student' && userId !== studentId) {
         return res.status(403).json({ error: 'Access denied' });
       }
-      
+
       if (role === 'instructor') {
         // Check if student is in any of the instructor's classes
         const instructorClasses = await storage.getClassesByInstructor(userId);
         const studentEnrollments = await storage.getEnrollmentsByStudent(studentId);
-        
-        const hasAccess = instructorClasses.some(cls => 
+
+        const hasAccess = instructorClasses.some(cls =>
           studentEnrollments.some(enrollment => enrollment.classId === cls.id)
         );
-        
+
         if (!hasAccess) {
           return res.status(403).json({ error: 'Student not in your classes' });
         }
       }
-      
+
       // Get student information
       const student = await storage.getUser(studentId);
       if (!student || student.role !== 'student') {
         return res.status(404).json({ error: 'Student not found' });
       }
-      
+
       // Get student's enrollments and performance data
       const enrollments = await storage.getEnrollmentsByStudent(studentId);
       const submissions = await storage.getSubmissionsByStudent(studentId);
-      
+
       let allGrades = [];
       for (const submission of submissions) {
         const grades = await storage.getGradesBySubmission(submission.id);
         allGrades.push(...grades);
       }
-      
+
       // Calculate performance metrics per class
       const classPerformance = await Promise.all(enrollments.map(async (enrollment) => {
         const classData = await storage.getClass(enrollment.classId);
         if (!classData) return null;
-        
+
         // Get assignments for this class
         const sessions = await storage.getSessionsByClass(classData.id);
         let classAssignments = [];
-        
+
         for (const session of sessions) {
           const assignments = await storage.getAssignmentsBySession(session.id);
           classAssignments.push(...assignments);
         }
-        
+
         // Get student's submissions and grades for this class
-        const classSubmissions = submissions.filter(sub => 
+        const classSubmissions = submissions.filter(sub =>
           classAssignments.some(assignment => assignment.id === sub.assignmentId)
         );
-        
+
         const classGrades = [];
         for (const submission of classSubmissions) {
           const grades = await storage.getGradesBySubmission(submission.id);
           classGrades.push(...grades);
         }
-        
-        const completionRate = classAssignments.length > 0 ? 
+
+        const completionRate = classAssignments.length > 0 ?
           Math.round((classSubmissions.length / classAssignments.length) * 100) : 0;
-        
-        const averageScore = classGrades.length > 0 ? 
+
+        const averageScore = classGrades.length > 0 ?
           Math.round((classGrades.reduce((sum, g) => sum + (g.score / g.maxScore) * 100, 0) / classGrades.length) * 10) / 10 : 0;
-        
+
         const lateSubmissions = classSubmissions.filter(s => s.isLate).length;
-        
+
         return {
           class: classData,
           enrollment,
@@ -2128,17 +2181,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         };
       }));
-      
+
       const validClassPerformance = classPerformance.filter(cp => cp !== null);
-      
+
       // Overall student performance
-      const overallAverageScore = allGrades.length > 0 ? 
+      const overallAverageScore = allGrades.length > 0 ?
         Math.round((allGrades.reduce((sum, g) => sum + (g.score / g.maxScore) * 100, 0) / allGrades.length) * 10) / 10 : 0;
-      
+
       const totalLateSubmissions = submissions.filter(s => s.isLate).length;
-      const onTimeRate = submissions.length > 0 ? 
+      const onTimeRate = submissions.length > 0 ?
         Math.round(((submissions.length - totalLateSubmissions) / submissions.length) * 100) : 0;
-      
+
       res.json({
         student: {
           id: student.id,
@@ -2165,14 +2218,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/analytics/multi-lab-comparison', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const { semester, year } = req.query;
-      
+
       // Get all labs
       const labs = await storage.getLabs();
-      
+
       const comparison = await Promise.all(labs.map(async (lab) => {
         // Get classes for this lab, optionally filtered by semester/year
         let classes = await storage.getClassesByLab(lab.id);
-        
+
         if (semester || year) {
           classes = classes.filter(cls => {
             if (semester && cls.semester !== semester) return false;
@@ -2180,33 +2233,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return true;
           });
         }
-        
+
         let totalStudents = 0;
         let totalAssignments = 0;
         let totalSubmissions = 0;
         let totalGrades = 0;
         let allScores: number[] = [];
         let totalLateSubmissions = 0;
-        
+
         for (const classData of classes) {
           const enrollments = await storage.getEnrollmentsByClass(classData.id);
           totalStudents += enrollments.filter(e => e.isActive).length;
-          
+
           const sessions = await storage.getSessionsByClass(classData.id);
-          
+
           for (const session of sessions) {
             const assignments = await storage.getAssignmentsBySession(session.id);
             totalAssignments += assignments.length;
-            
+
             for (const assignment of assignments) {
               const submissions = await storage.getSubmissionsByAssignment(assignment.id);
               totalSubmissions += submissions.length;
               totalLateSubmissions += submissions.filter(s => s.isLate).length;
-              
+
               for (const submission of submissions) {
                 const grades = await storage.getGradesBySubmission(submission.id);
                 totalGrades += grades.length;
-                
+
                 grades.forEach(grade => {
                   allScores.push((grade.score / grade.maxScore) * 100);
                 });
@@ -2214,16 +2267,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
         }
-        
-        const averageScore = allScores.length > 0 ? 
+
+        const averageScore = allScores.length > 0 ?
           Math.round((allScores.reduce((sum, score) => sum + score, 0) / allScores.length) * 10) / 10 : 0;
-        
-        const completionRate = (totalAssignments * totalStudents) > 0 ? 
+
+        const completionRate = (totalAssignments * totalStudents) > 0 ?
           Math.round((totalSubmissions / (totalAssignments * totalStudents)) * 100) : 0;
-        
-        const onTimeRate = totalSubmissions > 0 ? 
+
+        const onTimeRate = totalSubmissions > 0 ?
           Math.round(((totalSubmissions - totalLateSubmissions) / totalSubmissions) * 100) : 0;
-        
+
         return {
           lab: {
             id: lab.id,
@@ -2244,7 +2297,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         };
       }));
-      
+
       // Calculate system-wide metrics
       const systemMetrics = {
         totalLabs: labs.length,
@@ -2252,21 +2305,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalStudents: comparison.reduce((sum, lab) => sum + lab.metrics.totalStudents, 0),
         totalAssignments: comparison.reduce((sum, lab) => sum + lab.metrics.totalAssignments, 0),
         totalSubmissions: comparison.reduce((sum, lab) => sum + lab.metrics.totalSubmissions, 0),
-        systemAverageScore: comparison.length > 0 ? 
+        systemAverageScore: comparison.length > 0 ?
           Math.round(comparison.reduce((sum, lab) => sum + lab.metrics.averageScore, 0) / comparison.length * 10) / 10 : 0,
-        systemCompletionRate: comparison.length > 0 ? 
+        systemCompletionRate: comparison.length > 0 ?
           Math.round(comparison.reduce((sum, lab) => sum + lab.metrics.completionRate, 0) / comparison.length) : 0,
-        systemUtilizationRate: comparison.length > 0 ? 
+        systemUtilizationRate: comparison.length > 0 ?
           Math.round(comparison.reduce((sum, lab) => sum + lab.metrics.utilizationRate, 0) / comparison.length) : 0
       };
-      
+
       res.json({
         filters: { semester, year },
         systemMetrics,
         labComparison: comparison.sort((a, b) => b.metrics.averageScore - a.metrics.averageScore),
-        topPerformingLab: comparison.reduce((top, current) => 
+        topPerformingLab: comparison.reduce((top, current) =>
           current.metrics.averageScore > top.metrics.averageScore ? current : top, comparison[0] || null),
-        mostUtilizedLab: comparison.reduce((top, current) => 
+        mostUtilizedLab: comparison.reduce((top, current) =>
           current.metrics.utilizationRate > top.metrics.utilizationRate ? current : top, comparison[0] || null)
       });
     } catch (error: any) {
@@ -2282,7 +2335,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
       }
-      
+
       // Remove password from response
       const { password, ...userResponse } = user;
       res.json(userResponse);
@@ -2337,16 +2390,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Create sample labs
       const labA = await storage.createLab({
-        name: "Lab A - Chemistry", 
+        name: "Lab A - Chemistry",
         description: "Advanced Chemistry Laboratory",
         location: "Building A, Room 101",
         capacity: 20
       });
-      
+
       const labB = await storage.createLab({
-        name: "Lab B - Biology", 
+        name: "Lab B - Biology",
         description: "Biology Research Laboratory",
-        location: "Building B, Room 201", 
+        location: "Building B, Room 201",
         capacity: 24
       });
 
@@ -2360,7 +2413,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       const profJohnson = await storage.createUserWithRole({
-        email: "prof.johnson@university.edu", 
+        email: "prof.johnson@university.edu",
         password: "instructor123",
         firstName: "Prof. Michael",
         lastName: "Johnson",
@@ -2373,7 +2426,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         code: "CHEM401",
         gradeLevel: 11,
         tradeType: "NM" as const,
-        section: "A", 
+        section: "A",
         labId: labA.id,
         instructorId: drSmith.id,
         semester: "Fall",
@@ -2384,11 +2437,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         name: "Molecular Biology",
         code: "BIO301",
         gradeLevel: 12,
-        tradeType: "M" as const, 
+        tradeType: "M" as const,
         section: "A",
         labId: labB.id,
         instructorId: profJohnson.id,
-        semester: "Fall", 
+        semester: "Fall",
         year: 2024
       });
 
@@ -2403,7 +2456,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       for (let i = 1; i <= 6; i++) {
         await storage.createComputer({
-          name: `BIO-PC-${i.toString().padStart(2, '0')}`, 
+          name: `BIO-PC-${i.toString().padStart(2, '0')}`,
           labId: labB.id,
           specs: "Intel i5, 8GB RAM, Windows 11"
         });
@@ -2414,18 +2467,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (let i = 1; i <= 8; i++) {
         const student = await storage.createUser({
           email: `student${i}@university.edu`,
-          password: "student123", 
+          password: "student123",
           firstName: `Student${i}`,
           lastName: "Test"
         });
         students.push(student);
       }
 
-      res.status(201).json({ 
+      res.status(201).json({
         message: 'Sample data created successfully',
         created: {
           labs: 2,
-          instructors: 2, 
+          instructors: 2,
           classes: 2,
           computers: 11,
           students: 8

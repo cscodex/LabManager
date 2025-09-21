@@ -123,16 +123,16 @@ export function StudentRoster() {
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importErrors, setImportErrors] = useState<string[]>([]);
-  
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50); // Increased to show more students by default
-  
+
   // Additional filters for new student fields
   const [filterGrade, setFilterGrade] = useState<string>('all');
   const [filterTrade, setFilterTrade] = useState<string>('all');
   const [filterSection, setFilterSection] = useState<string>('all');
-  
+
   const { toast } = useToast();
 
   // Fetch all students with role 'student'
@@ -363,7 +363,7 @@ export function StudentRoster() {
       setSelectedStudentForEnroll(null);
       enrollStudentForm.reset();
       toast({
-        title: "Success", 
+        title: "Success",
         description: "Student enrolled successfully",
       });
     },
@@ -388,11 +388,11 @@ export function StudentRoster() {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['/api/students'] });
       queryClient.invalidateQueries({ queryKey: ['/api/enrollments/details'] });
-      
+
       // Handle partial success (when there are errors)
       if (result.errors && result.errors.length > 0) {
         setImportErrors(result.errors);
-        toast({ 
+        toast({
           title: "Partial Import Success",
           description: `${result.imported || 0} students imported, ${result.errors.length} failed. Check errors below.`,
           variant: "destructive"
@@ -400,7 +400,7 @@ export function StudentRoster() {
         // Don't close dialog so user can see errors
       } else {
         // Complete success
-        toast({ 
+        toast({
           title: "Import Successful",
           description: `${result.imported || 0} students imported successfully`
         });
@@ -410,10 +410,10 @@ export function StudentRoster() {
       }
     },
     onError: (error: any) => {
-      toast({ 
-        title: "Import Failed", 
-        description: error.message || "Failed to import students", 
-        variant: "destructive" 
+      toast({
+        title: "Import Failed",
+        description: error.message || "Failed to import students",
+        variant: "destructive"
       });
     },
   });
@@ -552,6 +552,20 @@ export function StudentRoster() {
     }
   };
 
+  // Sync profile fields when selecting an assigned class in the edit form
+  const handleAssignedClassChange = (classId: string) => {
+    try {
+      const cls = classes?.find(c => c.id === classId);
+      if (cls) {
+        addStudentForm.setValue('gradeLevel', cls.gradeLevel);
+        addStudentForm.setValue('tradeType', cls.tradeType as any);
+        addStudentForm.setValue('section', cls.section);
+      }
+    } catch (error) {
+      console.error('Error syncing assigned class to profile fields:', error);
+    }
+  };
+
   const handleEditSubmit = (data: AddStudentFormData) => {
     if (selectedStudentForEdit) {
       editStudentMutation.mutate({
@@ -672,7 +686,7 @@ export function StudentRoster() {
         try {
           const csv = e.target?.result as string;
           const lines = csv.split('\n').filter(line => line.trim());
-          
+
           if (lines.length < 2) {
             reject(new Error('CSV must have at least a header row and one data row'));
             return;
@@ -682,7 +696,7 @@ export function StudentRoster() {
           const headers = lines[0].split(',').map(h => h.trim());
           const expectedHeaders = ['firstName', 'lastName', 'email', 'gradeLevel', 'tradeType', 'section'];
           const optionalHeaders = ['studentId', 'gender', 'phone', 'address'];
-          
+
           const missingHeaders = expectedHeaders.filter(h => !headers.includes(h));
           if (missingHeaders.length > 0) {
             reject(new Error(`Missing required headers: ${missingHeaders.join(', ')}`));
@@ -695,7 +709,7 @@ export function StudentRoster() {
           for (let i = 1; i < lines.length; i++) {
             const values = lines[i].split(',').map(v => v.trim());
             const rowData: Record<string, any> = {};
-            
+
             headers.forEach((header, index) => {
               rowData[header] = values[index] || '';
             });
@@ -754,7 +768,7 @@ export function StudentRoster() {
 
   const handleImportSubmit = async () => {
     if (!importFile) return;
-    
+
     try {
       const students = await parseCSVFile(importFile);
       importStudentsMutation.mutate(students);
@@ -911,8 +925,8 @@ export function StudentRoster() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Grade</FormLabel>
-                          <Select 
-                            onValueChange={(value) => field.onChange(parseInt(value))} 
+                          <Select
+                            onValueChange={(value) => field.onChange(parseInt(value))}
                             value={field.value?.toString()}
                           >
                             <FormControl>
@@ -935,7 +949,7 @@ export function StudentRoster() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Trade</FormLabel>
-                          <Select 
+                          <Select
                             onValueChange={(value) => {
                               field.onChange(value);
                               setSelectedTradeType(value);
@@ -1002,8 +1016,8 @@ export function StudentRoster() {
                     />
                   </div>
                   <DialogFooter>
-                    <Button 
-                      type="submit" 
+                    <Button
+                      type="submit"
                       disabled={addStudentMutation.isPending}
                       data-testid="button-submit-student"
                     >
@@ -1014,7 +1028,7 @@ export function StudentRoster() {
               </Form>
             </DialogContent>
           </Dialog>
-          <Button 
+          <Button
             variant="outline"
             onClick={() => setShowImportDialog(true)}
             data-testid="button-import-students"
@@ -1024,7 +1038,7 @@ export function StudentRoster() {
           </Button>
         </div>
       </div>
-      
+
 
 
       {/* Search and Filters */}
@@ -1051,7 +1065,7 @@ export function StudentRoster() {
                 </Button>
               </div>
             </div>
-            
+
             {/* Primary Filters */}
             <div className="flex flex-col sm:flex-row gap-4">
               <div className="flex-1">
@@ -1066,7 +1080,7 @@ export function StudentRoster() {
                   className="w-full"
                 />
               </div>
-              
+
               <div className="flex-1">
                 <Select value={filterLab} onValueChange={(value) => { setFilterLab(value); resetPagination(); }}>
                   <SelectTrigger data-testid="select-filter-lab">
@@ -1082,7 +1096,7 @@ export function StudentRoster() {
                   </SelectContent>
                 </Select>
               </div>
-              
+
               <div className="flex-1">
                 <Select value={filterGroup} onValueChange={(value) => { setFilterGroup(value); resetPagination(); }}>
                   <SelectTrigger data-testid="select-filter-group">
@@ -1114,7 +1128,7 @@ export function StudentRoster() {
                   </SelectContent>
                 </Select>
               </div>
-              
+
               <div className="flex-1">
                 <Select value={filterTrade} onValueChange={(value) => { setFilterTrade(value); resetPagination(); }}>
                   <SelectTrigger data-testid="select-filter-trade">
@@ -1128,7 +1142,7 @@ export function StudentRoster() {
                   </SelectContent>
                 </Select>
               </div>
-              
+
               <div className="flex-1">
                 <Select value={filterSection} onValueChange={(value) => { setFilterSection(value); resetPagination(); }}>
                   <SelectTrigger data-testid="select-filter-section">
@@ -1255,10 +1269,10 @@ export function StudentRoster() {
                 const studentName = `${student.firstName} ${student.lastName}`;
                 // Find enrollment for this student to show additional info
                 const studentEnrollment = enrollments.find(e => e.student?.id === student.id);
-                
+
                 return (
-                  <div 
-                    key={student.id} 
+                  <div
+                    key={student.id}
                     className="flex items-center justify-between p-4 hover-elevate"
                     data-testid={`student-row-${student.id}`}
                   >
@@ -1350,7 +1364,7 @@ export function StudentRoster() {
                         )}
                       </div>
                     </div>
-                    
+
                     <div className="flex items-center gap-4">
                       <div className="text-right">
                         <div className="text-sm font-medium">
@@ -1377,8 +1391,8 @@ export function StudentRoster() {
                       </Badge>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button 
-                            variant="ghost" 
+                          <Button
+                            variant="ghost"
                             size="icon"
                             data-testid={`button-more-${student.id}`}
                           >
@@ -1407,7 +1421,7 @@ export function StudentRoster() {
             </div>
           )}
         </CardContent>
-        
+
         {/* Pagination Controls */}
         {totalPages > 1 && (
           <div className="px-4 py-3 border-t flex items-center justify-between">
@@ -1417,13 +1431,13 @@ export function StudentRoster() {
             <Pagination>
               <PaginationContent>
                 <PaginationItem>
-                  <PaginationPrevious 
+                  <PaginationPrevious
                     onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                     data-testid="button-prev-page"
                     className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
                   />
                 </PaginationItem>
-                
+
                 {/* Page Numbers */}
                 {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                   let pageNum;
@@ -1436,7 +1450,7 @@ export function StudentRoster() {
                   } else {
                     pageNum = currentPage - 2 + i;
                   }
-                  
+
                   return (
                     <PaginationItem key={pageNum}>
                       <PaginationLink
@@ -1450,7 +1464,7 @@ export function StudentRoster() {
                     </PaginationItem>
                   );
                 })}
-                
+
                 {totalPages > 5 && currentPage < totalPages - 2 && (
                   <>
                     <PaginationItem>
@@ -1467,9 +1481,9 @@ export function StudentRoster() {
                     </PaginationItem>
                   </>
                 )}
-                
+
                 <PaginationItem>
-                  <PaginationNext 
+                  <PaginationNext
                     onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
                     data-testid="button-next-page"
                     className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
@@ -1585,7 +1599,7 @@ export function StudentRoster() {
               Upload a CSV file with student data. Expected columns: firstName, lastName, email, gradeLevel, tradeType, section
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4">
             <div>
               <label htmlFor="csv-file" className="block text-sm font-medium mb-2">
@@ -1600,13 +1614,13 @@ export function StudentRoster() {
                 className="w-full p-2 border border-input rounded-md"
               />
             </div>
-            
+
             {importFile && (
               <div className="text-sm text-muted-foreground">
                 Selected: {importFile.name}
               </div>
             )}
-            
+
             {importErrors.length > 0 && (
               <div className="max-h-32 overflow-y-auto border border-destructive/30 rounded-md p-3">
                 <h4 className="text-sm font-medium text-destructive mb-2">Import Errors:</h4>
@@ -1617,7 +1631,7 @@ export function StudentRoster() {
                 </ul>
               </div>
             )}
-            
+
             <div className="text-sm text-muted-foreground">
               <p><strong>CSV Format:</strong></p>
               <p>firstName,lastName,email,gradeLevel,tradeType,section</p>
@@ -1625,7 +1639,7 @@ export function StudentRoster() {
               <p>John,Smith,john.smith@example.com,11,NM,A</p>
             </div>
           </div>
-          
+
           <DialogFooter>
             <Button
               variant="outline"
@@ -1725,6 +1739,7 @@ export function StudentRoster() {
                       <FormLabel>Gender</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
+
                           <SelectTrigger data-testid="select-edit-gender">
                             <SelectValue placeholder="Select gender" />
                           </SelectTrigger>
@@ -1739,6 +1754,101 @@ export function StudentRoster() {
                   )}
                 />
               </div>
+
+              {/* Assigned Class (select to sync grade/trade/section) */}
+              <FormItem>
+                <FormLabel>Assigned Class</FormLabel>
+                <Select onValueChange={handleAssignedClassChange}>
+                  <FormControl>
+                    <SelectTrigger data-testid="select-edit-assigned-class">
+                      <SelectValue placeholder="Select class (optional)" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {classes?.map((cls) => (
+                      <SelectItem key={cls.id} value={cls.id}>
+                        {cls.displayName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormItem>
+
+              {/* Profile-based assignment fields */}
+              <div className="grid grid-cols-3 gap-4">
+                <FormField
+                  control={addStudentForm.control}
+                  name="gradeLevel"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Grade</FormLabel>
+                      <Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value)}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-edit-grade">
+                            <SelectValue placeholder="Select grade" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="11">11</SelectItem>
+                          <SelectItem value="12">12</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={addStudentForm.control}
+                  name="tradeType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Trade</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-edit-trade">
+                            <SelectValue placeholder="Select trade" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="NM">Non Medical (NM)</SelectItem>
+                          <SelectItem value="M">Medical (M)</SelectItem>
+                          <SelectItem value="C">Commerce (C)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={addStudentForm.control}
+                  name="section"
+                  render={({ field }) => {
+                    const trade = addStudentForm.watch('tradeType');
+                    const sectionOptions = trade === 'NM' ? ['A','B','C','D','E','F'] : ['A','B'];
+                    return (
+                      <FormItem>
+                        <FormLabel>Section</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-edit-section">
+                              <SelectValue placeholder="Select section" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {sectionOptions.map((s) => (
+                              <SelectItem key={s} value={s}>{s}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    );
+                  }}
+                />
+              </div>
+
 
               <DialogFooter>
                 <Button
