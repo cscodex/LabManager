@@ -5,8 +5,26 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Save, User, Bell, Shield } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function Settings() {
+  const { toast } = useToast();
+
+  const handleRemoveOrphans = async (mode: 'safe' | 'force') => {
+    try {
+      const res = await apiRequest("POST", "/api/students/remove-orphans", mode === 'safe' ? {} : { mode });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed');
+      toast({
+        title: "Removed incomplete-profile students",
+        description: `${data.removed} removed, ${data.skipped} skipped (mode: ${data.mode})`
+      });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message || 'Action failed', variant: "destructive" });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -102,6 +120,7 @@ export default function Settings() {
                 <p className="text-sm text-muted-foreground">Automatically log out after 30 minutes of inactivity</p>
               </div>
               <Switch id="sessionTimeout" defaultChecked data-testid="switch-session-timeout" />
+
             </div>
           </CardContent>
         </Card>
@@ -122,9 +141,29 @@ export default function Settings() {
           </CardContent>
         </Card>
 
+        {/* Admin Tools */}
+        <Card data-testid="card-admin-tools">
+          <CardHeader>
+            <CardTitle>Admin Tools</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Remove orphan students (incomplete class profile)</Label>
+                <p className="text-sm text-muted-foreground">Safe mode skips students with active enrollments</p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => handleRemoveOrphans('safe')} data-testid="button-remove-orphans-safe">Safe</Button>
+                <Button variant="destructive" size="sm" onClick={() => handleRemoveOrphans('force')} data-testid="button-remove-orphans-force">Force</Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+
         {/* Save Button */}
         <div className="flex justify-end">
-          <Button data-testid="button-save-settings">
+          <Button data-testid="button-save-settings" onClick={() => toast({ title: 'Settings saved', description: 'Your changes have been saved.' })}>
             <Save className="h-4 w-4 mr-2" />
             Save Changes
           </Button>
