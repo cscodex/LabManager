@@ -741,6 +741,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Remove students without complete class profile (Option A)
+  // mode: 'safe' (default) -> skip students with enrollments; 'force' -> delete regardless of enrollments
+  app.post('/api/students/remove-orphans', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      const mode = req.body?.mode === 'force' ? 'force' : 'safe';
+      const students = await storage.getUsersByRole('student');
+      const candidates = students.filter((s: any) => !s.gradeLevel || !s.tradeType || !s.section);
+
+      let removed = 0;
+      let skipped = 0;
+
+      for (const s of candidates) {
+        const enrollments = await storage.getEnrollmentsByStudent(s.id);
+        if (mode === 'safe' && enrollments.length > 0) {
+          skipped++;
+          continue;
+        }
+        await storage.deleteUser(s.id);
+        removed++;
+      }
+
+      res.json({ totalCandidates: candidates.length, removed, skipped, mode });
+    } catch (error: any) {
+      console.error('Error removing orphan students:', error);
+      res.status(500).json({ error: 'Failed to remove orphan students', message: error.message });
+    }
+  });
+
+
   // Enrollments with detailed information
   app.get('/api/enrollments/details', requireAuth, async (req, res) => {
     try {
