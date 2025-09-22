@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { eq, and, sql, not, isNull, isNotNull, inArray } from "drizzle-orm";
+import { eq, and, not, isNull, isNotNull, inArray } from "drizzle-orm";
 import * as bcrypt from "bcrypt";
 import * as schema from "@shared/schema";
 import session from "express-session";
@@ -163,7 +163,7 @@ export class DatabaseStorage implements IStorage {
     };
 
     const result = await db.insert(schema.users).values(userWithHashedPassword).returning();
-    return result[0] as User;
+    return (result as User[])[0];
   }
 
   async createUserWithRole(insertUser: InsertUserWithRole): Promise<User> {
@@ -177,7 +177,7 @@ export class DatabaseStorage implements IStorage {
     };
 
     const result = await db.insert(schema.users).values(userWithHashedPassword).returning();
-    return result[0] as User;
+    return (result as User[])[0];
   }
 
   async getUsersByRole(role: string): Promise<User[]> {
@@ -280,7 +280,6 @@ export class DatabaseStorage implements IStorage {
 
   async createClass(classData: InsertClass): Promise<Class> {
     // Generate displayName server-side to ensure consistency
-    const tradeNames = { NM: "Non Medical", M: "Medical", C: "Commerce" };
     const displayName = `${classData.gradeLevel} ${classData.tradeType} ${classData.section}`;
     
     const classWithDisplayName = {
@@ -289,7 +288,7 @@ export class DatabaseStorage implements IStorage {
     };
     
     const result = await db.insert(schema.classes).values(classWithDisplayName).returning();
-    return result[0] as Class;
+    return (result as Class[])[0];
   }
 
   async updateClass(id: string, classData: Partial<InsertClass>): Promise<Class | undefined> {
@@ -502,7 +501,7 @@ export class DatabaseStorage implements IStorage {
 
   async createGroup(group: InsertGroup): Promise<Group> {
     const result = await db.insert(schema.groups).values(group).returning();
-    return result[0] as Group;
+    return (result as Group[])[0];
   }
 
   async createGroupWithStudents(group: InsertGroup, studentIds: string[]): Promise<Group> {
@@ -586,7 +585,7 @@ export class DatabaseStorage implements IStorage {
 
       // Create the group
       const result = await tx.insert(schema.groups).values(groupToInsert).returning();
-      const createdGroup = result[0] as Group;
+      const createdGroup = (result as Group[])[0];
 
       console.log('Group created:', createdGroup);
 
