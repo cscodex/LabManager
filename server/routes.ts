@@ -424,6 +424,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'Class not found' });
       }
 
+      // Debug logging
+      console.log('Update group authorization check:', {
+        groupId: req.params.id,
+        classId: group.classId,
+        classInstructorId: classInfo.instructorId,
+        currentUserId: req.user!.id,
+        userRole: req.user!.role,
+        updateData: req.body
+      });
+
       if (classInfo.instructorId !== req.user!.id) {
         return res.status(403).json({ error: 'You can only modify groups in your own classes' });
       }
@@ -483,6 +493,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'Class not found' });
       }
 
+      // Debug logging
+      console.log('Add member authorization check:', {
+        groupId: req.params.id,
+        classId: group.classId,
+        classInstructorId: classInfo.instructorId,
+        currentUserId: req.user!.id,
+        userRole: req.user!.role
+      });
+
       if (classInfo.instructorId !== req.user!.id) {
         return res.status(403).json({ error: 'You can only modify groups in your own classes' });
       }
@@ -510,6 +529,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!classInfo) {
         return res.status(404).json({ error: 'Class not found' });
       }
+
+      // Debug logging
+      console.log('Remove member authorization check:', {
+        groupId: req.params.id,
+        studentId: req.params.studentId,
+        classId: group.classId,
+        classInstructorId: classInfo.instructorId,
+        currentUserId: req.user!.id,
+        userRole: req.user!.role
+      });
 
       if (classInfo.instructorId !== req.user!.id) {
         return res.status(403).json({ error: 'You can only modify groups in your own classes' });
