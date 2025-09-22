@@ -800,152 +800,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
 
-  // Enrollments with detailed information
+  // Legacy enrollment endpoint - now returns empty array since enrollment system was removed
   app.get('/api/enrollments/details', requireAuth, async (req, res) => {
     try {
-      const userRole = req.user?.role;
-      const userId = req.user?.id;
-
-      if (userRole === 'instructor') {
-        // Instructors can see all enrollments
-        const classes = await storage.getClasses();
-        const allEnrollments = [];
-
-        for (const cls of classes) {
-          const enrollments = await storage.getEnrollmentsByClass(cls.id);
-          for (const enrollment of enrollments) {
-            // Get student info
-            const student = await storage.getUser(enrollment.studentId);
-            if (!student) continue;
-
-            // Get instructor info
-            const instructor = await storage.getUser(cls.instructorId);
-
-            // Get lab info
-            const lab = await storage.getLab(cls.labId);
-
-            // Get group and computer info if available
-            let group = null;
-            let computer = null;
-            if (enrollment.groupId) {
-              group = await storage.getGroup(enrollment.groupId);
-              if (group && group.computerId) {
-                computer = await storage.getComputer(group.computerId);
-              }
-            }
-
-            // Count sessions for completion tracking
-            const sessions = await storage.getSessionsByClass(cls.id);
-
-            allEnrollments.push({
-              ...enrollment,
-              student: {
-                id: student.id,
-                firstName: student.firstName,
-                lastName: student.lastName,
-                email: student.email
-              },
-              class: {
-                id: cls.id,
-                name: cls.name,
-                displayName: cls.displayName,
-                gradeLevel: cls.gradeLevel,
-                tradeType: cls.tradeType,
-                section: cls.section
-              },
-              instructor: instructor ? {
-                id: instructor.id,
-                firstName: instructor.firstName,
-                lastName: instructor.lastName
-              } : null,
-              lab: lab ? {
-                name: lab.name
-              } : null,
-              group: group ? {
-                name: group.name
-              } : null,
-              computer: computer ? {
-                name: computer.name
-              } : null,
-              completedSessions: 0, // TODO: Implement session completion tracking
-              totalSessions: sessions.length
-            });
-          }
-        }
-
-        res.json(allEnrollments);
-      } else if (userRole === 'student') {
-        // Students can only see their own enrollments
-        const classes = await storage.getClasses();
-        const studentEnrollments = [];
-
-        for (const cls of classes) {
-          const enrollments = await storage.getEnrollmentsByClass(cls.id);
-          const studentEnrollment = enrollments.find(e => e.studentId === userId && e.isActive);
-
-          if (studentEnrollment) {
-            // Get instructor info
-            const instructor = await storage.getUser(cls.instructorId);
-
-            // Get lab info
-            const lab = await storage.getLab(cls.labId);
-
-            // Get group and computer info if available
-            let group = null;
-            let computer = null;
-            if (studentEnrollment.groupId) {
-              group = await storage.getGroup(studentEnrollment.groupId);
-              if (group && group.computerId) {
-                computer = await storage.getComputer(group.computerId);
-              }
-            }
-
-            // Count sessions for completion tracking
-            const sessions = await storage.getSessionsByClass(cls.id);
-
-            studentEnrollments.push({
-              ...studentEnrollment,
-              student: {
-                id: req.user!.id,
-                firstName: req.user!.firstName,
-                lastName: req.user!.lastName,
-                email: req.user!.email
-              },
-              class: {
-                id: cls.id,
-                name: cls.name,
-                displayName: cls.displayName,
-                gradeLevel: cls.gradeLevel,
-                tradeType: cls.tradeType,
-                section: cls.section
-              },
-              instructor: instructor ? {
-                id: instructor.id,
-                firstName: instructor.firstName,
-                lastName: instructor.lastName
-              } : null,
-              lab: lab ? {
-                name: lab.name
-              } : null,
-              group: group ? {
-                name: group.name
-              } : null,
-              computer: computer ? {
-                name: computer.name
-              } : null,
-              completedSessions: 0, // TODO: Implement session completion tracking
-              totalSessions: sessions.length
-            });
-          }
-        }
-
-        res.json(studentEnrollments);
-      } else {
-        res.status(403).json({ error: 'Insufficient permissions', message: 'You don\'t have permission to access this resource' });
-      }
+      // Return empty array since enrollment system has been removed
+      // Students are now directly linked to groups via users.groupId
+      res.json([]);
     } catch (error: any) {
-      console.error('Error fetching enrollment details:', error);
-      res.status(500).json({ error: 'Failed to fetch enrollment details' });
+      console.error('Error in legacy enrollment endpoint:', error);
+      res.status(500).json({ error: 'Enrollment system has been removed' });
     }
   });
 

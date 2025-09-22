@@ -82,10 +82,7 @@ export function GroupManager() {
     queryKey: ['/api/students']
   });
 
-  // Fetch enrollments to determine available students
-  const { data: enrollments = [] } = useQuery<Enrollment[]>({
-    queryKey: ['/api/enrollments']
-  });
+  // Note: Enrollment system removed - students are now directly linked to groups via users.groupId
 
   const filteredGroups = selectedLab === "all" 
     ? groups 
@@ -126,13 +123,12 @@ export function GroupManager() {
                 Create a new group for collaborative lab work.
               </DialogDescription>
             </DialogHeader>
-            <CreateGroupForm 
+            <CreateGroupForm
               onSuccess={() => setShowCreateDialog(false)}
               classes={classes}
-              computers={computers} 
+              computers={computers}
               labs={labs}
               students={students}
-              enrollments={enrollments}
               groups={groups}
             />
           </DialogContent>
@@ -141,12 +137,11 @@ export function GroupManager() {
 
       {/* Manage Members Dialog */}
       {selectedGroup && (
-        <ManageMembersDialog 
+        <ManageMembersDialog
           group={selectedGroup}
           open={showManageDialog}
           onOpenChange={setShowManageDialog}
           students={students}
-          enrollments={enrollments}
           groups={groups}
         />
       )}
@@ -269,7 +264,7 @@ export function GroupManager() {
                                     {member.firstName} {member.lastName}
                                   </div>
                                   <div className="text-xs text-muted-foreground">
-                                    {enrollment.seatNumber ? `Seat: ${enrollment.seatNumber}` : 'No seat assigned'}
+                                    {enrollment?.seatNumber ? `Seat: ${enrollment.seatNumber}` : member.email}
                                   </div>
                                 </div>
                               </div>
@@ -318,13 +313,12 @@ export function GroupManager() {
 }
 
 // Create Group Form Component
-function CreateGroupForm({ 
-  onSuccess, 
-  classes, 
+function CreateGroupForm({
+  onSuccess,
+  classes,
   computers,
   labs,
   students,
-  enrollments,
   groups
 }: {
   onSuccess: () => void;
@@ -332,7 +326,6 @@ function CreateGroupForm({
   computers: Computer[];
   labs: Lab[];
   students: User[];
-  enrollments: Enrollment[];
   groups: GroupWithDetails[];
 }) {
   const [selectedClassId, setSelectedClassId] = useState<string>("");
@@ -773,14 +766,12 @@ function ManageMembersDialog({
   open,
   onOpenChange,
   students,
-  enrollments,
   groups
 }: {
   group: GroupWithDetails;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   students: User[];
-  enrollments: Enrollment[];
   groups: GroupWithDetails[];
 }) {
   const [availableStudents, setAvailableStudents] = useState<User[]>([]);
@@ -790,10 +781,6 @@ function ManageMembersDialog({
   // Get available students when dialog opens
   useEffect(() => {
     if (open && group) {
-      // Get students enrolled in the same class
-      const classEnrollments = enrollments.filter(e => e.classId === group.classId && e.isActive);
-      const enrolledStudentIds = classEnrollments.map(e => e.studentId);
-      
       // Get students already in groups for this class (excluding current group)
       const studentsInOtherGroups = new Set();
       groups.forEach(g => {
@@ -803,23 +790,22 @@ function ManageMembersDialog({
           });
         }
       });
-      
+
       // Get current group member IDs
       const currentMemberIds = new Set(
         group.members?.map(m => m.student.id) || []
       );
-      
-      // Filter available students
-      const available = students.filter(student => 
-        enrolledStudentIds.includes(student.id) && 
+
+      // Filter available students - now just check if they're students and not in other groups
+      const available = students.filter(student =>
         student.role === 'student' &&
         !studentsInOtherGroups.has(student.id) &&
         !currentMemberIds.has(student.id)
       );
-      
+
       setAvailableStudents(available);
     }
-  }, [open, group, students, enrollments, groups]);
+  }, [open, group, students, groups]);
 
   // Mutations
   const addMemberMutation = useMutation({
