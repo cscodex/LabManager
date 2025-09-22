@@ -2554,41 +2554,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       console.log('🚀 Starting emergency migration to remove enrollment system...');
 
-      // Run the migration SQL directly
-      const migrationSQL = `
-        -- Add group_id column to users table
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS group_id VARCHAR;
+      // Run the migration SQL step by step to avoid syntax issues
+      console.log('Step 1: Adding group_id column...');
+      await storage.db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS group_id VARCHAR`);
 
-        -- Add foreign key constraint
-        DO $$
-        BEGIN
-          IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints
-                        WHERE constraint_name = 'users_group_id_fkey') THEN
-            ALTER TABLE users ADD CONSTRAINT users_group_id_fkey FOREIGN KEY (group_id) REFERENCES groups(id);
-          END IF;
-        END $$;
+      console.log('Step 2: Creating index...');
+      await storage.db.execute(`CREATE INDEX IF NOT EXISTS users_group_idx ON users(group_id)`);
 
-        -- Create index for performance
-        CREATE INDEX IF NOT EXISTS users_group_idx ON users(group_id);
+      console.log('Step 3: Adding foreign key constraint...');
+      try {
+        await storage.db.execute(`ALTER TABLE users ADD CONSTRAINT users_group_id_fkey FOREIGN KEY (group_id) REFERENCES groups(id)`);
+      } catch (e: any) {
+        if (!e.message.includes('already exists')) {
+          console.log('Foreign key constraint already exists or failed:', e.message);
+        }
+      }
 
-        -- Migrate existing enrollment data (if enrollments table exists)
-        DO $$
-        BEGIN
-          IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'enrollments') THEN
-            UPDATE users
-            SET group_id = e.group_id
-            FROM enrollments e
-            WHERE users.id = e.student_id
-            AND e.is_active = true
-            AND e.group_id IS NOT NULL;
+      console.log('Step 4: Checking for enrollments table...');
+      const enrollmentsCheck = await storage.db.execute(`
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_name = 'enrollments'
+      `);
 
-            DROP TABLE IF EXISTS enrollments CASCADE;
-          END IF;
-        END $$;
-      `;
+      if (enrollmentsCheck.rows && enrollmentsCheck.rows.length > 0) {
+        console.log('Step 5: Migrating enrollment data...');
+        await storage.db.execute(`
+          UPDATE users
+          SET group_id = e.group_id
+          FROM enrollments e
+          WHERE users.id = e.student_id
+          AND e.is_active = true
+          AND e.group_id IS NOT NULL
+        `);
 
-      // Execute the migration using the existing database connection
-      await storage.db.execute(migrationSQL);
+        console.log('Step 6: Dropping enrollments table...');
+        await storage.db.execute(`DROP TABLE IF EXISTS enrollments CASCADE`);
+      } else {
+        console.log('No enrollments table found, skipping migration step');
+      }
 
       console.log('✅ Migration completed successfully!');
 
