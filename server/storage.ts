@@ -5,8 +5,8 @@ import * as bcrypt from "bcrypt";
 import * as schema from "@shared/schema";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
-import type { 
-  User, InsertUser, InsertUserWithRole, Lab, InsertLab, Class, InsertClass,
+import type {
+  User, InsertUserWithRole, Lab, InsertLab, Class, InsertClass,
   Computer, InsertComputer, Group, InsertGroup,
   Session, InsertSession,
   Assignment, InsertAssignment, Submission, InsertSubmission,
@@ -38,9 +38,9 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   getUsersByRole(role: string): Promise<User[]>;
-  createUser(user: InsertUser): Promise<User>;
+  createUser(user: InsertUserWithRole): Promise<User>;
   createUserWithRole(user: InsertUserWithRole): Promise<User>;
-  updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined>;
+  updateUser(id: string, user: Partial<InsertUserWithRole>): Promise<User | undefined>;
   deleteUser(id: string): Promise<boolean>;
   verifyPassword(plainPassword: string, hashedPassword: string): Promise<boolean>;
   
@@ -140,59 +140,60 @@ export class DatabaseStorage implements IStorage {
     const result = await db.query.users.findFirst({
       where: eq(schema.users.id, id),
     });
-    return result;
+    return result as User | undefined;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     const result = await db.query.users.findFirst({
       where: eq(schema.users.email, email),
     });
-    return result;
+    return result as User | undefined;
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
+  async createUser(insertUser: InsertUserWithRole): Promise<User> {
     // Hash the password before storing
     const saltRounds = 12;
-    const hashedPassword = await bcrypt.hash(insertUser.password, saltRounds);
-    
+    const hashedPassword = await bcrypt.hash((insertUser as any).password, saltRounds);
+
     // Create user with default student role (secure default)
     const userWithHashedPassword = {
       ...insertUser,
       password: hashedPassword,
-      role: "student" as const, // Default role assignment - only server can set role
+      role: (insertUser as any).role || "student" as const, // Use provided role or default to student
     };
-    
+
     const result = await db.insert(schema.users).values(userWithHashedPassword).returning();
-    return result[0];
+    return result[0] as User;
   }
 
   async createUserWithRole(insertUser: InsertUserWithRole): Promise<User> {
     // Hash the password before storing
     const saltRounds = 12;
-    const hashedPassword = await bcrypt.hash(insertUser.password, saltRounds);
-    
+    const hashedPassword = await bcrypt.hash((insertUser as any).password, saltRounds);
+
     const userWithHashedPassword = {
       ...insertUser,
       password: hashedPassword,
     };
-    
+
     const result = await db.insert(schema.users).values(userWithHashedPassword).returning();
-    return result[0];
+    return result[0] as User;
   }
 
   async getUsersByRole(role: string): Promise<User[]> {
-    return await db.query.users.findMany({
+    const result = await db.query.users.findMany({
       where: eq(schema.users.role, role),
     });
+    return result as User[];
   }
 
-  async updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined> {
-    let updateData = { ...user };
-    
+  async updateUser(id: string, user: Partial<InsertUserWithRole>): Promise<User | undefined> {
+    let updateData: any = { ...user };
+
     // Hash password if it's being updated
-    if (user.password) {
+    if ((user as any).password) {
       const saltRounds = 12;
-      updateData.password = await bcrypt.hash(user.password, saltRounds);
+      updateData.password = await bcrypt.hash((user as any).password, saltRounds);
     }
     
     const result = await db.update(schema.users)
@@ -200,15 +201,15 @@ export class DatabaseStorage implements IStorage {
       .where(eq(schema.users.id, id))
       .returning();
     
-    return result[0];
+    return result[0] as User | undefined;
   }
 
   async deleteUser(id: string): Promise<boolean> {
     const result = await db.delete(schema.users)
       .where(eq(schema.users.id, id))
       .returning();
-    
-    return result.length > 0;
+
+    return (result as any[]).length > 0;
   }
 
   async verifyPassword(plainPassword: string, hashedPassword: string): Promise<boolean> {
@@ -288,7 +289,7 @@ export class DatabaseStorage implements IStorage {
     };
     
     const result = await db.insert(schema.classes).values(classWithDisplayName).returning();
-    return result[0];
+    return result[0] as Class;
   }
 
   async updateClass(id: string, classData: Partial<InsertClass>): Promise<Class | undefined> {
@@ -318,8 +319,8 @@ export class DatabaseStorage implements IStorage {
     const result = await db.delete(schema.classes)
       .where(eq(schema.classes.id, id))
       .returning();
-    
-    return result.length > 0;
+
+    return (result as any[]).length > 0;
   }
 
   // Timetables
@@ -501,7 +502,7 @@ export class DatabaseStorage implements IStorage {
 
   async createGroup(group: InsertGroup): Promise<Group> {
     const result = await db.insert(schema.groups).values(group).returning();
-    return result[0];
+    return result[0] as Group;
   }
 
   async createGroupWithStudents(group: InsertGroup, studentIds: string[]): Promise<Group> {
@@ -554,7 +555,7 @@ export class DatabaseStorage implements IStorage {
           where: and(
             eq(schema.computers.id, group.computerId),
             eq(schema.computers.labId, group.labId),
-            eq(schema.computers.isActive, true)
+            eq(schema.computers.status, 'available')
           )
         });
         
@@ -584,7 +585,8 @@ export class DatabaseStorage implements IStorage {
       console.log('Inserting group with data:', groupToInsert);
 
       // Create the group
-      const [createdGroup] = await tx.insert(schema.groups).values(groupToInsert).returning();
+      const result = await tx.insert(schema.groups).values(groupToInsert).returning();
+      const createdGroup = result[0] as Group;
 
       console.log('Group created:', createdGroup);
 
@@ -628,7 +630,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(schema.groups.id, id))
       .returning();
     
-    return result.length > 0;
+    return (result as any[]).length > 0;
   }
 
   async addGroupMember(groupId: string, studentId: string): Promise<boolean> {

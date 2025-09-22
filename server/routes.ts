@@ -2665,6 +2665,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Test endpoint to debug group creation SQL
+  app.post('/api/admin/test-group-sql', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      console.log('🧪 Testing group creation SQL...');
+
+      // Import pool for raw SQL queries
+      const { pool } = await import('../server/storage.js');
+
+      // Test if group_id column exists and is accessible
+      const columnTest = await pool.query(`
+        SELECT column_name, data_type, is_nullable
+        FROM information_schema.columns
+        WHERE table_name = 'users' AND column_name = 'group_id'
+      `);
+
+      console.log('Column test result:', columnTest.rows);
+
+      // Test a simple query on the users table with group_id
+      const simpleTest = await pool.query(`
+        SELECT id, email, role, group_id
+        FROM users
+        WHERE role = 'student'
+        LIMIT 3
+      `);
+
+      console.log('Simple query result:', simpleTest.rows);
+
+      // Test the problematic query pattern
+      const testStudentIds = ['test-id-1', 'test-id-2'];
+      const problemQuery = `
+        UPDATE users
+        SET group_id = $1
+        WHERE id = ANY($2)
+        AND role = 'student'
+        AND group_id IS NULL
+        RETURNING id, email, group_id
+      `;
+
+      console.log('Testing problematic query pattern...');
+      const testResult = await pool.query(problemQuery, ['test-group-id', testStudentIds]);
+
+      res.json({
+        success: true,
+        tests: {
+          column_exists: columnTest.rows.length > 0,
+          column_details: columnTest.rows[0] || null,
+          sample_users: simpleTest.rows,
+          update_test: testResult.rows
+        }
+      });
+
+    } catch (error: any) {
+      console.error('❌ SQL test failed:', error);
+      res.status(500).json({
+        success: false,
+        error: 'SQL test failed',
+        details: error.message,
+        stack: error.stack
+      });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
