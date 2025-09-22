@@ -251,31 +251,31 @@ export class DatabaseStorage implements IStorage {
 
   // Classes
   async getClasses(): Promise<Class[]> {
-    return await db.query.classes.findMany();
+    return await db.query.classes.findMany() as Class[];
   }
 
   async getClassesByLab(labId: string): Promise<Class[]> {
     return await db.query.classes.findMany({
       where: eq(schema.classes.labId, labId),
-    });
+    }) as Class[];
   }
 
   async getClassesByInstructor(instructorId: string): Promise<Class[]> {
     return await db.query.classes.findMany({
       where: eq(schema.classes.instructorId, instructorId),
-    });
+    }) as Class[];
   }
 
   async getClassesByGradeAndTrade(gradeLevel: number, tradeType: string): Promise<Class[]> {
     return await db.query.classes.findMany({
       where: and(eq(schema.classes.gradeLevel, gradeLevel), eq(schema.classes.tradeType, tradeType)),
-    });
+    }) as Class[];
   }
 
   async getClass(id: string): Promise<Class | undefined> {
     return await db.query.classes.findFirst({
       where: eq(schema.classes.id, id),
-    });
+    }) as Class | undefined;
   }
 
   async createClass(classData: InsertClass): Promise<Class> {
@@ -311,7 +311,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(schema.classes.id, id))
       .returning();
     
-    return result[0];
+    return result[0] as Class;
   }
 
   async deleteClass(id: string): Promise<boolean> {
