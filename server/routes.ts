@@ -2612,6 +2612,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Diagnostic endpoint to check database schema
+  app.get('/api/admin/check-schema', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      console.log('🔍 Checking database schema...');
+
+      // Check if group_id column exists in users table
+      const columnCheck = await storage.db.execute(`
+        SELECT column_name, data_type, is_nullable
+        FROM information_schema.columns
+        WHERE table_name = 'users' AND column_name = 'group_id'
+      `);
+
+      // Check if enrollments table exists
+      const enrollmentsCheck = await storage.db.execute(`
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_name = 'enrollments'
+      `);
+
+      // Check users table structure
+      const usersColumns = await storage.db.execute(`
+        SELECT column_name, data_type, is_nullable
+        FROM information_schema.columns
+        WHERE table_name = 'users'
+        ORDER BY ordinal_position
+      `);
+
+      res.json({
+        success: true,
+        schema: {
+          group_id_column_exists: columnCheck.rows && columnCheck.rows.length > 0,
+          group_id_details: columnCheck.rows?.[0] || null,
+          enrollments_table_exists: enrollmentsCheck.rows && enrollmentsCheck.rows.length > 0,
+          users_table_columns: usersColumns.rows || []
+        }
+      });
+
+    } catch (error: any) {
+      console.error('❌ Schema check failed:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Schema check failed',
+        details: error.message
+      });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
