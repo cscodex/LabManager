@@ -1110,10 +1110,17 @@ function ReassignComputerDialog({
         const isInLab = c.labId === selectedLabId;
         const isAvailable = !c.status || c.status === 'available' || c.status === null || c.status === undefined;
         if (!isInLab || !isAvailable) return false;
+
+        // Always include the current group's computer (if any)
+        if (c.id === group.computerId) {
+          return true;
+        }
+
         // Exclude computers already assigned to other groups in the SAME CLASS
         const assignedComputerIds = groups
           .filter(g => g.id !== group.id && g.computerId && g.classId === group.classId)
           .map(g => g.computerId);
+
         return !assignedComputerIds.includes(c.id);
       })
     : [];

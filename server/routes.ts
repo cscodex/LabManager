@@ -481,6 +481,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const instructorClasses = await storage.getClassesByInstructor(req.user!.id);
       const hasAccess = instructorClasses.some(cls => cls.id === group.classId);
 
+      // Debug logging
+      console.log('Add member authorization debug:', {
+        userId: req.user!.id,
+        userRole: req.user!.role,
+        groupId: req.params.id,
+        groupClassId: group.classId,
+        instructorClasses: instructorClasses.map(c => ({ id: c.id, name: c.name })),
+        hasAccess
+      });
+
       if (!hasAccess) {
         return res.status(403).json({ error: 'You can only modify groups in your own classes' });
       }
