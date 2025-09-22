@@ -419,22 +419,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'Group not found' });
       }
 
-      const classInfo = await storage.getClass(group.classId);
-      if (!classInfo) {
-        return res.status(404).json({ error: 'Class not found' });
-      }
+      // Check if instructor teaches the class that this group belongs to
+      const instructorClasses = await storage.getClassesByInstructor(req.user!.id);
+      const hasAccess = instructorClasses.some(cls => cls.id === group.classId);
 
-      // Debug logging
-      console.log('Update group authorization check:', {
-        groupId: req.params.id,
-        classId: group.classId,
-        classInstructorId: classInfo.instructorId,
-        currentUserId: req.user!.id,
-        userRole: req.user!.role,
-        updateData: req.body
-      });
-
-      if (classInfo.instructorId !== req.user!.id) {
+      if (!hasAccess) {
         return res.status(403).json({ error: 'You can only modify groups in your own classes' });
       }
 
@@ -488,21 +477,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'Group not found' });
       }
 
-      const classInfo = await storage.getClass(group.classId);
-      if (!classInfo) {
-        return res.status(404).json({ error: 'Class not found' });
-      }
+      // Check if instructor teaches the class that this group belongs to
+      const instructorClasses = await storage.getClassesByInstructor(req.user!.id);
+      const hasAccess = instructorClasses.some(cls => cls.id === group.classId);
 
-      // Debug logging
-      console.log('Add member authorization check:', {
-        groupId: req.params.id,
-        classId: group.classId,
-        classInstructorId: classInfo.instructorId,
-        currentUserId: req.user!.id,
-        userRole: req.user!.role
-      });
-
-      if (classInfo.instructorId !== req.user!.id) {
+      if (!hasAccess) {
         return res.status(403).json({ error: 'You can only modify groups in your own classes' });
       }
 
@@ -525,22 +504,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'Group not found' });
       }
 
-      const classInfo = await storage.getClass(group.classId);
-      if (!classInfo) {
-        return res.status(404).json({ error: 'Class not found' });
-      }
+      // Check if instructor teaches the class that this group belongs to
+      const instructorClasses = await storage.getClassesByInstructor(req.user!.id);
+      const hasAccess = instructorClasses.some(cls => cls.id === group.classId);
 
-      // Debug logging
-      console.log('Remove member authorization check:', {
-        groupId: req.params.id,
-        studentId: req.params.studentId,
-        classId: group.classId,
-        classInstructorId: classInfo.instructorId,
-        currentUserId: req.user!.id,
-        userRole: req.user!.role
-      });
-
-      if (classInfo.instructorId !== req.user!.id) {
+      if (!hasAccess) {
         return res.status(403).json({ error: 'You can only modify groups in your own classes' });
       }
 

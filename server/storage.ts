@@ -566,7 +566,7 @@ export class DatabaseStorage implements IStorage {
         const existingGroupWithComputer = await tx.query.groups.findFirst({
           where: and(
             eq(schema.groups.computerId, group.computerId),
-            eq(schema.groups.classId, group.classId!)
+            eq(schema.groups.classId, (group as any).classId)
           )
         });
 
