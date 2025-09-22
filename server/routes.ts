@@ -2572,13 +2572,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
           displayName: c.displayName,
           gradeLevel: c.gradeLevel,
           tradeType: c.tradeType,
-          section: c.section
+          section: c.section,
+          instructorId: c.instructorId
         })),
         isAuthenticated: req.isAuthenticated(),
         sessionId: req.sessionID
       });
     } catch (error: any) {
       console.error('Error in debug endpoint:', error);
+      res.status(500).json({ error: 'Debug endpoint failed', details: error.message });
+    }
+  });
+
+  // Debug endpoint to check class-instructor assignments
+  app.get('/api/debug/class-assignments', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      // Get all classes and their instructor assignments
+      const allClasses = await storage.getClasses();
+      const problematicClasses = allClasses.filter(c =>
+        c.displayName === '11 NM A' ||
+        c.displayName === '11 NM B' ||
+        c.displayName === '11 NM C' ||
+        c.displayName === '11 NM D'
+      );
+
+      // Get all instructors
+      const allInstructors = await storage.getUsersByRole('instructor');
+
+      res.json({
+        currentUser: {
+          id: req.user!.id,
+          email: req.user!.email,
+          firstName: req.user!.firstName,
+          lastName: req.user!.lastName
+        },
+        problematicClasses: problematicClasses.map(c => ({
+          id: c.id,
+          displayName: c.displayName,
+          instructorId: c.instructorId,
+          isCurrentUserInstructor: c.instructorId === req.user!.id
+        })),
+        allInstructors: allInstructors.map(i => ({
+          id: i.id,
+          email: i.email,
+          firstName: i.firstName,
+          lastName: i.lastName
+        })),
+        totalClasses: allClasses.length,
+        totalInstructors: allInstructors.length
+      });
+    } catch (error: any) {
+      console.error('Error in class assignments debug endpoint:', error);
       res.status(500).json({ error: 'Debug endpoint failed', details: error.message });
     }
   });
