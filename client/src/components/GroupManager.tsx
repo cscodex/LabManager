@@ -225,10 +225,17 @@ export function GroupManager() {
                       <span data-testid={`text-computer-${group.id}`}>{group.computer?.name || 'No Computer'}</span>
                     </div>
                   </div>
-                  
-                  <Badge variant="outline" className="w-fit">
-                    {group.instructor ? `${group.instructor.firstName} ${group.instructor.lastName}` : 'No Instructor'}
-                  </Badge>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge variant="outline" className="w-fit">
+                      {group.instructor ? `${group.instructor.firstName} ${group.instructor.lastName}` : 'No Instructor'}
+                    </Badge>
+                    {group.class && (
+                      <Badge variant="secondary" className="w-fit">
+                        {group.class.displayName || `${group.class.gradeLevel} ${group.class.tradeType} ${group.class.section}`}
+                      </Badge>
+                    )}
+                  </div>
                 </CardHeader>
                 
                 <CardContent className="space-y-4">
@@ -264,7 +271,10 @@ export function GroupManager() {
                                     {member.firstName} {member.lastName}
                                   </div>
                                   <div className="text-xs text-muted-foreground">
-                                    {enrollment?.seatNumber ? `Seat: ${enrollment.seatNumber}` : member.email}
+                                    {member.email}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {member.gradeLevel} {member.tradeType} {member.section}
                                   </div>
                                 </div>
                               </div>
@@ -402,13 +412,11 @@ function CreateGroupForm({
       s.section === cls.section
     );
 
-    // Get students already in groups for this class
+    // Get students already in ANY group (since students can only be in one group)
     const studentsInGroups = new Set<string>();
-    groups.forEach(group => {
-      if (group.classId === selectedClassId && group.members) {
-        group.members.forEach(member => {
-          studentsInGroups.add(member.student.id);
-        });
+    students.forEach(student => {
+      if (student.groupId) {
+        studentsInGroups.add(student.id);
       }
     });
 
@@ -781,13 +789,11 @@ function ManageMembersDialog({
   // Get available students when dialog opens
   useEffect(() => {
     if (open && group) {
-      // Get students already in groups for this class (excluding current group)
-      const studentsInOtherGroups = new Set();
-      groups.forEach(g => {
-        if (g.id !== group.id && g.classId === group.classId && g.members) {
-          g.members.forEach(member => {
-            studentsInOtherGroups.add(member.student.id);
-          });
+      // Get students already in ANY group (since students can only be in one group)
+      const studentsInGroups = new Set();
+      students.forEach(student => {
+        if (student.groupId) {
+          studentsInGroups.add(student.id);
         }
       });
 
@@ -796,11 +802,15 @@ function ManageMembersDialog({
         group.members?.map(m => m.student.id) || []
       );
 
-      // Filter available students - now just check if they're students and not in other groups
+      // Filter available students - only ungrouped students from the same class
       const available = students.filter(student =>
         student.role === 'student' &&
-        !studentsInOtherGroups.has(student.id) &&
-        !currentMemberIds.has(student.id)
+        !studentsInGroups.has(student.id) &&
+        !currentMemberIds.has(student.id) &&
+        // Only show students from the same class (based on grade, trade, section)
+        student.gradeLevel === group.class?.gradeLevel &&
+        student.tradeType === group.class?.tradeType &&
+        student.section === group.class?.section
       );
 
       setAvailableStudents(available);
@@ -810,7 +820,7 @@ function ManageMembersDialog({
   // Mutations
   const addMemberMutation = useMutation({
     mutationFn: async (studentId: string) => {
-      const response = await apiRequest(`/api/groups/${group.id}/members`, 'POST', {
+      const response = await apiRequest('POST', `/api/groups/${group.id}/members`, {
         studentId
       });
       return response;
@@ -833,7 +843,7 @@ function ManageMembersDialog({
 
   const removeMemberMutation = useMutation({
     mutationFn: async (studentId: string) => {
-      const response = await apiRequest(`/api/groups/${group.id}/members/${studentId}`, 'DELETE');
+      const response = await apiRequest('DELETE', `/api/groups/${group.id}/members/${studentId}`);
       return response;
     },
     onSuccess: () => {
@@ -854,7 +864,7 @@ function ManageMembersDialog({
 
   const reassignLeaderMutation = useMutation({
     mutationFn: async (newLeaderId: string) => {
-      const response = await apiRequest(`/api/groups/${group.id}`, 'PATCH', {
+      const response = await apiRequest('PATCH', `/api/groups/${group.id}`, {
         leaderId: newLeaderId
       });
       return response;
@@ -1052,8 +1062,8 @@ function ReassignComputerDialog({
         labId: selectedLabId,
         computerId: selectedComputerId === "none" ? null : selectedComputerId
       };
-      
-      return await apiRequest(`/api/groups/${group.id}`, 'PATCH', updateData);
+
+      return await apiRequest('PATCH', `/api/groups/${group.id}`, updateData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/groups/details'] });
