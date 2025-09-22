@@ -420,11 +420,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if instructor teaches the class that this group belongs to
-      const instructorClasses = await storage.getClassesByInstructor(req.user!.id);
-      const hasAccess = instructorClasses.some(cls => cls.id === group.classId);
+      const accessCheck = await storage.verifyInstructorAccess(req.user!.id, group.classId);
 
-      if (!hasAccess) {
-        return res.status(403).json({ error: 'You can only modify groups in your own classes' });
+      console.log('Update group authorization debug:', {
+        userId: req.user!.id,
+        userRole: req.user!.role,
+        groupId: req.params.id,
+        groupClassId: group.classId,
+        accessCheck
+      });
+
+      if (!accessCheck.hasAccess) {
+        return res.status(403).json({
+          error: 'You can only modify groups in your own classes',
+          reason: accessCheck.reason,
+          details: accessCheck.details
+        });
       }
 
       const validatedData = insertGroupSchema.partial().parse(req.body);
@@ -478,21 +489,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if instructor teaches the class that this group belongs to
-      const instructorClasses = await storage.getClassesByInstructor(req.user!.id);
-      const hasAccess = instructorClasses.some(cls => cls.id === group.classId);
+      const accessCheck = await storage.verifyInstructorAccess(req.user!.id, group.classId);
 
-      // Debug logging
       console.log('Add member authorization debug:', {
         userId: req.user!.id,
         userRole: req.user!.role,
         groupId: req.params.id,
         groupClassId: group.classId,
-        instructorClasses: instructorClasses.map(c => ({ id: c.id, name: c.name })),
-        hasAccess
+        accessCheck
       });
 
-      if (!hasAccess) {
-        return res.status(403).json({ error: 'You can only modify groups in your own classes' });
+      if (!accessCheck.hasAccess) {
+        return res.status(403).json({
+          error: 'You can only modify groups in your own classes',
+          reason: accessCheck.reason,
+          details: accessCheck.details
+        });
       }
 
       await storage.addGroupMember(req.params.id, studentId);
@@ -515,11 +527,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if instructor teaches the class that this group belongs to
-      const instructorClasses = await storage.getClassesByInstructor(req.user!.id);
-      const hasAccess = instructorClasses.some(cls => cls.id === group.classId);
+      const accessCheck = await storage.verifyInstructorAccess(req.user!.id, group.classId);
 
-      if (!hasAccess) {
-        return res.status(403).json({ error: 'You can only modify groups in your own classes' });
+      console.log('Remove member authorization debug:', {
+        userId: req.user!.id,
+        userRole: req.user!.role,
+        groupId: req.params.id,
+        groupClassId: group.classId,
+        accessCheck
+      });
+
+      if (!accessCheck.hasAccess) {
+        return res.status(403).json({
+          error: 'You can only modify groups in your own classes',
+          reason: accessCheck.reason,
+          details: accessCheck.details
+        });
       }
 
       await storage.removeGroupMember(req.params.id, req.params.studentId);

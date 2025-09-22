@@ -261,9 +261,52 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getClassesByInstructor(instructorId: string): Promise<Class[]> {
-    return await db.query.classes.findMany({
+    console.log('getClassesByInstructor called with instructorId:', instructorId);
+    const classes = await db.query.classes.findMany({
       where: eq(schema.classes.instructorId, instructorId),
     }) as Class[];
+    console.log('getClassesByInstructor found classes:', classes.map(c => ({ id: c.id, displayName: c.displayName, instructorId: c.instructorId })));
+    return classes;
+  }
+
+  // Debug function to verify user and role
+  async verifyInstructorAccess(instructorId: string, classId: string): Promise<{ hasAccess: boolean; reason: string; details: any }> {
+    try {
+      // Check if user exists and is instructor
+      const user = await this.getUser(instructorId);
+      if (!user) {
+        return { hasAccess: false, reason: 'User not found', details: { instructorId } };
+      }
+
+      if (user.role !== 'instructor') {
+        return { hasAccess: false, reason: 'User is not an instructor', details: { instructorId, role: user.role } };
+      }
+
+      // Check if class exists
+      const classData = await this.getClass(classId);
+      if (!classData) {
+        return { hasAccess: false, reason: 'Class not found', details: { classId } };
+      }
+
+      // Check if instructor teaches this class
+      const instructorClasses = await this.getClassesByInstructor(instructorId);
+      const hasAccess = instructorClasses.some(cls => cls.id === classId);
+
+      return {
+        hasAccess,
+        reason: hasAccess ? 'Access granted' : 'Instructor does not teach this class',
+        details: {
+          instructorId,
+          classId,
+          classDisplayName: classData.displayName,
+          classInstructorId: classData.instructorId,
+          instructorClassesCount: instructorClasses.length,
+          instructorClasses: instructorClasses.map(c => ({ id: c.id, displayName: c.displayName }))
+        }
+      };
+    } catch (error: any) {
+      return { hasAccess: false, reason: 'Database error', details: { error: error.message } };
+    }
   }
 
   async getClassesByGradeAndTrade(gradeLevel: number, tradeType: string): Promise<Class[]> {
