@@ -7,8 +7,8 @@ import session from "express-session";
 import connectPg from "connect-pg-simple";
 import type { 
   User, InsertUser, InsertUserWithRole, Lab, InsertLab, Class, InsertClass,
-  Computer, InsertComputer, Group, InsertGroup, 
-  Enrollment, InsertEnrollment, Session, InsertSession,
+  Computer, InsertComputer, Group, InsertGroup,
+  Session, InsertSession,
   Assignment, InsertAssignment, Submission, InsertSubmission,
   Grade, InsertGrade, Timetable, InsertTimetable
 } from "@shared/schema";
@@ -89,13 +89,7 @@ export interface IStorage {
   removeGroupMember(groupId: string, studentId: string): Promise<boolean>;
   getGroupsWithDetails(): Promise<any[]>;
   
-  // Enrollments
-  getEnrollmentsByClass(classId: string): Promise<Enrollment[]>;
-  getEnrollmentsByStudent(studentId: string): Promise<Enrollment[]>;
-  getEnrollment(id: string): Promise<Enrollment | undefined>;
-  createEnrollment(enrollment: InsertEnrollment): Promise<Enrollment>;
-  updateEnrollment(id: string, enrollment: Partial<InsertEnrollment>): Promise<Enrollment | undefined>;
-  deleteEnrollment(id: string): Promise<boolean>;
+  // Note: Enrollment methods removed - students are directly linked to groups
   
   // Sessions
   getSessionsByClass(classId: string): Promise<Session[]>;
@@ -514,33 +508,30 @@ export class DatabaseStorage implements IStorage {
       // Server-side validations
       if (studentIds && studentIds.length > 0) {
         // Check if any students are already in groups
-        const existingGroupEnrollments = await tx.query.enrollments.findMany({
+        const studentsInGroups = await tx.query.users.findMany({
           where: and(
-            eq(schema.enrollments.classId, group.classId),
-            eq(schema.enrollments.isActive, true),
-            inArray(schema.enrollments.studentId, studentIds),
-            isNotNull(schema.enrollments.groupId)
+            inArray(schema.users.id, studentIds),
+            isNotNull(schema.users.groupId)
           )
         });
 
-        if (existingGroupEnrollments.length > 0) {
-          console.error('Students already in groups:', existingGroupEnrollments);
+        if (studentsInGroups.length > 0) {
+          console.error('Students already in groups:', studentsInGroups.map(s => s.id));
           throw new Error("Some students are already assigned to groups");
         }
 
-        // Validate student enrollment and count
-        const validEnrollments = await tx.query.enrollments.findMany({
+        // Validate students exist and are students
+        const validStudents = await tx.query.users.findMany({
           where: and(
-            eq(schema.enrollments.classId, group.classId),
-            eq(schema.enrollments.isActive, true),
-            inArray(schema.enrollments.studentId, studentIds)
+            inArray(schema.users.id, studentIds),
+            eq(schema.users.role, 'student')
           )
         });
 
-        console.log('Valid enrollments found:', validEnrollments.length, 'Expected:', studentIds.length);
+        console.log('Valid students found:', validStudents.length, 'Expected:', studentIds.length);
 
-        if (validEnrollments.length !== studentIds.length) {
-          throw new Error("Some students are not enrolled in this class");
+        if (validStudents.length !== studentIds.length) {
+          throw new Error("Some selected users are not valid students");
         }
 
         // Validate max members
@@ -597,14 +588,13 @@ export class DatabaseStorage implements IStorage {
       // Assign students to group atomically if provided
       if (studentIds && studentIds.length > 0) {
         console.log('Assigning students to group:', studentIds);
-        const updateResult = await tx.update(schema.enrollments)
+        const updateResult = await tx.update(schema.users)
           .set({ groupId: createdGroup.id })
           .where(
             and(
-              inArray(schema.enrollments.studentId, studentIds),
-              eq(schema.enrollments.classId, group.classId),
-              eq(schema.enrollments.isActive, true),
-              isNull(schema.enrollments.groupId)
+              inArray(schema.users.id, studentIds),
+              eq(schema.users.role, 'student'),
+              isNull(schema.users.groupId)
             )
           )
           .returning();
@@ -645,29 +635,28 @@ export class DatabaseStorage implements IStorage {
       throw new Error('Group not found');
     }
 
-    // Check if student is enrolled in the same class
-    const enrollment = await db.query.enrollments.findFirst({
+    // Check if student exists and is a student
+    const student = await db.query.users.findFirst({
       where: and(
-        eq(schema.enrollments.studentId, studentId),
-        eq(schema.enrollments.classId, group.classId),
-        eq(schema.enrollments.isActive, true)
+        eq(schema.users.id, studentId),
+        eq(schema.users.role, 'student')
       )
     });
 
-    if (!enrollment) {
-      throw new Error('Student is not enrolled in this class');
+    if (!student) {
+      throw new Error('Student not found');
     }
 
-    // Check if student is already in a group for this class
-    if (enrollment.groupId) {
-      throw new Error('Student is already in a group for this class');
+    // Check if student is already in a group
+    if (student.groupId) {
+      throw new Error('Student is already in a group');
     }
 
     // Check current group size
-    const currentMembers = await db.query.enrollments.findMany({
+    const currentMembers = await db.query.users.findMany({
       where: and(
-        eq(schema.enrollments.groupId, groupId),
-        eq(schema.enrollments.isActive, true)
+        eq(schema.users.groupId, groupId),
+        eq(schema.users.role, 'student')
       )
     });
 
@@ -676,9 +665,9 @@ export class DatabaseStorage implements IStorage {
     }
 
     // Add student to group
-    await db.update(schema.enrollments)
+    await db.update(schema.users)
       .set({ groupId: groupId })
-      .where(eq(schema.enrollments.id, enrollment.id));
+      .where(eq(schema.users.id, studentId));
 
     return true;
   }
@@ -690,27 +679,27 @@ export class DatabaseStorage implements IStorage {
       throw new Error('Group not found');
     }
 
-    // Find the enrollment record
-    const enrollment = await db.query.enrollments.findFirst({
+    // Check if student is in this group
+    const student = await db.query.users.findFirst({
       where: and(
-        eq(schema.enrollments.studentId, studentId),
-        eq(schema.enrollments.groupId, groupId),
-        eq(schema.enrollments.isActive, true)
+        eq(schema.users.id, studentId),
+        eq(schema.users.groupId, groupId),
+        eq(schema.users.role, 'student')
       )
     });
 
-    if (!enrollment) {
+    if (!student) {
       throw new Error('Student is not in this group');
     }
 
     // Check if student is the leader - if so, we need to reassign leadership or prevent removal
     if (group.leaderId === studentId) {
       // Count remaining members
-      const otherMembers = await db.query.enrollments.findMany({
+      const otherMembers = await db.query.users.findMany({
         where: and(
-          eq(schema.enrollments.groupId, groupId),
-          eq(schema.enrollments.isActive, true),
-          not(eq(schema.enrollments.studentId, studentId))
+          eq(schema.users.groupId, groupId),
+          eq(schema.users.role, 'student'),
+          not(eq(schema.users.id, studentId))
         )
       });
 
@@ -725,9 +714,9 @@ export class DatabaseStorage implements IStorage {
     }
 
     // Remove student from group
-    await db.update(schema.enrollments)
+    await db.update(schema.users)
       .set({ groupId: null })
-      .where(eq(schema.enrollments.id, enrollment.id));
+      .where(eq(schema.users.id, studentId));
 
     return true;
   }
@@ -778,37 +767,32 @@ export class DatabaseStorage implements IStorage {
             }
           }
 
-          // Get group members (enrollments + student details)
-          const enrollments = await db.query.enrollments.findMany({
+          // Get group members directly from users table
+          const students = await db.query.users.findMany({
             where: and(
-              eq(schema.enrollments.groupId, group.id),
-              eq(schema.enrollments.isActive, true)
+              eq(schema.users.groupId, group.id),
+              eq(schema.users.role, 'student')
             ),
           });
 
-          const members = await Promise.all(
-            enrollments.map(async (enrollment) => {
-              const student = await db.query.users.findFirst({
-                where: eq(schema.users.id, enrollment.studentId),
-              });
-              // Remove password for security
-              const sanitizedStudent = student ? {
-                id: student.id,
-                firstName: student.firstName,
-                lastName: student.lastName,
-                email: student.email,
-                role: student.role,
-                gradeLevel: student.gradeLevel,
-                tradeType: student.tradeType,
-                section: student.section
-              } : null;
+          const members = students.map((student) => {
+            // Remove password for security
+            const sanitizedStudent = {
+              id: student.id,
+              firstName: student.firstName,
+              lastName: student.lastName,
+              email: student.email,
+              role: student.role,
+              gradeLevel: student.gradeLevel,
+              tradeType: student.tradeType,
+              section: student.section,
+              groupId: student.groupId
+            };
 
-              return {
-                enrollment,
-                student: sanitizedStudent
-              };
-            })
-          );
+            return {
+              student: sanitizedStudent
+            };
+          });
 
           return {
             ...group,
@@ -828,46 +812,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  // Enrollments
-  async getEnrollmentsByClass(classId: string): Promise<Enrollment[]> {
-    return await db.query.enrollments.findMany({
-      where: eq(schema.enrollments.classId, classId),
-    });
-  }
-
-  async getEnrollmentsByStudent(studentId: string): Promise<Enrollment[]> {
-    return await db.query.enrollments.findMany({
-      where: eq(schema.enrollments.studentId, studentId),
-    });
-  }
-
-  async getEnrollment(id: string): Promise<Enrollment | undefined> {
-    return await db.query.enrollments.findFirst({
-      where: eq(schema.enrollments.id, id),
-    });
-  }
-
-  async createEnrollment(enrollment: InsertEnrollment): Promise<Enrollment> {
-    const result = await db.insert(schema.enrollments).values(enrollment).returning();
-    return result[0];
-  }
-
-  async updateEnrollment(id: string, enrollment: Partial<InsertEnrollment>): Promise<Enrollment | undefined> {
-    const result = await db.update(schema.enrollments)
-      .set(enrollment)
-      .where(eq(schema.enrollments.id, id))
-      .returning();
-    
-    return result[0];
-  }
-
-  async deleteEnrollment(id: string): Promise<boolean> {
-    const result = await db.delete(schema.enrollments)
-      .where(eq(schema.enrollments.id, id))
-      .returning();
-    
-    return result.length > 0;
-  }
+  // Note: Enrollment methods removed - students are directly linked to groups via users.groupId
 
   // Sessions
   async getSessionsByClass(classId: string): Promise<Session[]> {

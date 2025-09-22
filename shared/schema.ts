@@ -20,6 +20,8 @@ export const users = pgTable("users", {
   gradeLevel: integer("grade_level"), // 11 or 12 (nullable for instructors)
   tradeType: text("trade_type"), // "NM" (Non Medical), "M" (Medical), "C" (Commerce) - matches classes table
   section: text("section"), // "A" to "J" (nullable for instructors)
+  // Direct group assignment (replaces enrollment system)
+  groupId: varchar("group_id").references(() => groups.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   // Performance indexes
@@ -102,25 +104,7 @@ export const groups = pgTable("groups", {
   computerIdx: index("groups_computer_idx").on(table.computerId),
 }));
 
-// Student enrollments
-export const enrollments = pgTable("enrollments", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  studentId: varchar("student_id").references(() => users.id).notNull(),
-  classId: varchar("class_id").references(() => classes.id).notNull(),
-  groupId: varchar("group_id").references(() => groups.id),
-  seatNumber: text("seat_number"),
-  enrolledAt: timestamp("enrolled_at").defaultNow().notNull(),
-  isActive: boolean("is_active").default(true).notNull(),
-}, (table) => ({
-  // Unique constraint: one enrollment per student per class (business logic enforced via triggers or app logic for active-only)
-  uniqueEnrollment: unique().on(table.studentId, table.classId),
-  // Performance indexes
-  studentIdx: index("enrollments_student_idx").on(table.studentId),
-  classIdx: index("enrollments_class_idx").on(table.classId),
-  groupIdx: index("enrollments_group_idx").on(table.groupId),
-  activeIdx: index("enrollments_active_idx").on(table.isActive),
-  classActiveIdx: index("enrollments_class_active_idx").on(table.classId, table.isActive),
-}));
+// Note: Enrollment system removed - students are now directly linked to classes via profile fields
 
 // Weekly timetable structure
 export const timetables = pgTable("timetables", {
@@ -381,12 +365,7 @@ export const insertGroupSchema = createInsertSchema(groups).pick({
   computerId: z.string().nullable().optional(),
 });
 
-export const insertEnrollmentSchema = createInsertSchema(enrollments).pick({
-  studentId: true,
-  classId: true,
-  groupId: true,
-  seatNumber: true,
-});
+// Note: Enrollment schema removed - students are directly linked to groups via users.groupId
 
 export const insertSessionSchema = createInsertSchema(sessions).pick({
   title: true,
@@ -442,8 +421,7 @@ export type Timetable = typeof timetables.$inferSelect;
 export type InsertGroup = z.infer<typeof insertGroupSchema>;
 export type Group = typeof groups.$inferSelect;
 
-export type InsertEnrollment = z.infer<typeof insertEnrollmentSchema>;
-export type Enrollment = typeof enrollments.$inferSelect;
+// Note: Enrollment types removed
 
 export type InsertSession = z.infer<typeof insertSessionSchema>;
 export type Session = typeof sessions.$inferSelect;
@@ -460,9 +438,12 @@ export type Grade = typeof grades.$inferSelect;
 // Relations for optimized queries
 import { relations } from "drizzle-orm";
 
-export const usersRelations = relations(users, ({ many }) => ({
-  enrollments: many(enrollments),
+export const usersRelations = relations(users, ({ many, one }) => ({
   instructedClasses: many(classes),
+  group: one(groups, {
+    fields: [users.groupId],
+    references: [groups.id],
+  }),
   ledGroups: many(groups),
 }));
 
@@ -475,8 +456,11 @@ export const classesRelations = relations(classes, ({ one, many }) => ({
     fields: [classes.labId],
     references: [labs.id],
   }),
-  enrollments: many(enrollments),
   groups: many(groups),
+  students: many(users, {
+    fields: [classes.id],
+    references: [users.groupId],
+  }),
 }));
 
 export const groupsRelations = relations(groups, ({ one, many }) => ({
@@ -496,23 +480,13 @@ export const groupsRelations = relations(groups, ({ one, many }) => ({
     fields: [groups.leaderId],
     references: [users.id],
   }),
-  enrollments: many(enrollments),
+  members: many(users, {
+    fields: [groups.id],
+    references: [users.groupId],
+  }),
 }));
 
-export const enrollmentsRelations = relations(enrollments, ({ one }) => ({
-  student: one(users, {
-    fields: [enrollments.studentId],
-    references: [users.id],
-  }),
-  class: one(classes, {
-    fields: [enrollments.classId],
-    references: [classes.id],
-  }),
-  group: one(groups, {
-    fields: [enrollments.groupId],
-    references: [groups.id],
-  }),
-}));
+// Note: Enrollment relations removed - students are directly linked to groups
 
 export const labsRelations = relations(labs, ({ many }) => ({
   computers: many(computers),

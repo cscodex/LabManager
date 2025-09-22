@@ -10,7 +10,6 @@ import {
   insertClassSchema,
   insertComputerSchema,
   insertGroupSchema,
-  insertEnrollmentSchema,
   insertSessionSchema,
   insertAssignmentSchema,
   insertSubmissionSchema,
