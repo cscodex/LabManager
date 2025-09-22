@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { eq, and, sql, not } from "drizzle-orm";
+import { eq, and, sql, not, isNull, isNotNull, inArray } from "drizzle-orm";
 import * as bcrypt from "bcrypt";
 import * as schema from "@shared/schema";
 import session from "express-session";
@@ -518,8 +518,8 @@ export class DatabaseStorage implements IStorage {
           where: and(
             eq(schema.enrollments.classId, group.classId),
             eq(schema.enrollments.isActive, true),
-            // Check if any of the student IDs already have a groupId
-            sql`${schema.enrollments.studentId} = ANY(${studentIds}) AND ${schema.enrollments.groupId} IS NOT NULL`
+            inArray(schema.enrollments.studentId, studentIds),
+            isNotNull(schema.enrollments.groupId)
           )
         });
 
@@ -533,7 +533,7 @@ export class DatabaseStorage implements IStorage {
           where: and(
             eq(schema.enrollments.classId, group.classId),
             eq(schema.enrollments.isActive, true),
-            sql`${schema.enrollments.studentId} = ANY(${studentIds})`
+            inArray(schema.enrollments.studentId, studentIds)
           )
         });
 
@@ -601,10 +601,10 @@ export class DatabaseStorage implements IStorage {
           .set({ groupId: createdGroup.id })
           .where(
             and(
-              sql`${schema.enrollments.studentId} = ANY(${studentIds})`,
+              inArray(schema.enrollments.studentId, studentIds),
               eq(schema.enrollments.classId, group.classId),
               eq(schema.enrollments.isActive, true),
-              sql`${schema.enrollments.groupId} IS NULL`
+              isNull(schema.enrollments.groupId)
             )
           )
           .returning();
