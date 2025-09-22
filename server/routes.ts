@@ -2550,6 +2550,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Debug endpoint to check user authorization
+  app.get('/api/debug/user-auth', requireAuth, async (req, res) => {
+    try {
+      const user = req.user!;
+      const instructorClasses = user.role === 'instructor'
+        ? await storage.getClassesByInstructor(user.id)
+        : [];
+
+      res.json({
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          firstName: user.firstName,
+          lastName: user.lastName
+        },
+        instructorClasses: instructorClasses.map(c => ({
+          id: c.id,
+          name: c.name,
+          displayName: c.displayName,
+          gradeLevel: c.gradeLevel,
+          tradeType: c.tradeType,
+          section: c.section
+        })),
+        isAuthenticated: req.isAuthenticated(),
+        sessionId: req.sessionID
+      });
+    } catch (error: any) {
+      console.error('Error in debug endpoint:', error);
+      res.status(500).json({ error: 'Debug endpoint failed', details: error.message });
+    }
+  });
+
   // Test endpoint to debug group creation SQL
   app.post('/api/admin/test-group-sql', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
