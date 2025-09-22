@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, boolean, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, boolean, unique, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -21,7 +21,12 @@ export const users = pgTable("users", {
   tradeType: text("trade_type"), // "NM" (Non Medical), "M" (Medical), "C" (Commerce) - matches classes table
   section: text("section"), // "A" to "J" (nullable for instructors)
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  // Performance indexes
+  roleIdx: index("users_role_idx").on(table.role),
+  profileIdx: index("users_profile_idx").on(table.gradeLevel, table.tradeType, table.section),
+  emailIdx: index("users_email_idx").on(table.email),
+}));
 
 // Labs table
 export const labs = pgTable("labs", {
@@ -31,7 +36,10 @@ export const labs = pgTable("labs", {
   location: text("location").notNull(),
   capacity: integer("capacity").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  // Performance indexes
+  nameIdx: index("labs_name_idx").on(table.name),
+}));
 
 // Computers table
 export const computers = pgTable("computers", {
@@ -44,7 +52,11 @@ export const computers = pgTable("computers", {
   storage: text("storage"), // Storage specifications
   os: text("os"), // Operating system
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  // Performance indexes
+  labStatusIdx: index("computers_lab_status_idx").on(table.labId, table.status),
+  nameIdx: index("computers_name_idx").on(table.name),
+}));
 
 // Classes table with enhanced class-trade-section system
 export const classes = pgTable("classes", {
@@ -64,6 +76,11 @@ export const classes = pgTable("classes", {
 }, (table) => ({
   // Unique constraint: one class per grade, trade, section, semester, and year
   uniqueClass: unique().on(table.gradeLevel, table.tradeType, table.section, table.semester, table.year),
+  // Performance indexes
+  profileIdx: index("classes_profile_idx").on(table.gradeLevel, table.tradeType, table.section),
+  instructorIdx: index("classes_instructor_idx").on(table.instructorId),
+  labIdx: index("classes_lab_idx").on(table.labId),
+  activeIdx: index("classes_active_idx").on(table.isActive),
 }));
 
 // Groups table
@@ -79,6 +96,10 @@ export const groups = pgTable("groups", {
 }, (table) => ({
   // Unique constraint: one group name per class
   uniqueGroupInClass: unique().on(table.name, table.classId),
+  // Performance indexes
+  classIdx: index("groups_class_idx").on(table.classId),
+  labIdx: index("groups_lab_idx").on(table.labId),
+  computerIdx: index("groups_computer_idx").on(table.computerId),
 }));
 
 // Student enrollments
@@ -93,6 +114,12 @@ export const enrollments = pgTable("enrollments", {
 }, (table) => ({
   // Unique constraint: one enrollment per student per class (business logic enforced via triggers or app logic for active-only)
   uniqueEnrollment: unique().on(table.studentId, table.classId),
+  // Performance indexes
+  studentIdx: index("enrollments_student_idx").on(table.studentId),
+  classIdx: index("enrollments_class_idx").on(table.classId),
+  groupIdx: index("enrollments_group_idx").on(table.groupId),
+  activeIdx: index("enrollments_active_idx").on(table.isActive),
+  classActiveIdx: index("enrollments_class_active_idx").on(table.classId, table.isActive),
 }));
 
 // Weekly timetable structure
@@ -426,3 +453,74 @@ export type Submission = typeof submissions.$inferSelect;
 
 export type InsertGrade = z.infer<typeof insertGradeSchema>;
 export type Grade = typeof grades.$inferSelect;
+
+// Relations for optimized queries
+import { relations } from "drizzle-orm";
+
+export const usersRelations = relations(users, ({ many }) => ({
+  enrollments: many(enrollments),
+  instructedClasses: many(classes),
+  ledGroups: many(groups),
+}));
+
+export const classesRelations = relations(classes, ({ one, many }) => ({
+  instructor: one(users, {
+    fields: [classes.instructorId],
+    references: [users.id],
+  }),
+  lab: one(labs, {
+    fields: [classes.labId],
+    references: [labs.id],
+  }),
+  enrollments: many(enrollments),
+  groups: many(groups),
+}));
+
+export const groupsRelations = relations(groups, ({ one, many }) => ({
+  class: one(classes, {
+    fields: [groups.classId],
+    references: [classes.id],
+  }),
+  lab: one(labs, {
+    fields: [groups.labId],
+    references: [labs.id],
+  }),
+  computer: one(computers, {
+    fields: [groups.computerId],
+    references: [computers.id],
+  }),
+  leader: one(users, {
+    fields: [groups.leaderId],
+    references: [users.id],
+  }),
+  enrollments: many(enrollments),
+}));
+
+export const enrollmentsRelations = relations(enrollments, ({ one }) => ({
+  student: one(users, {
+    fields: [enrollments.studentId],
+    references: [users.id],
+  }),
+  class: one(classes, {
+    fields: [enrollments.classId],
+    references: [classes.id],
+  }),
+  group: one(groups, {
+    fields: [enrollments.groupId],
+    references: [groups.id],
+  }),
+}));
+
+export const labsRelations = relations(labs, ({ many }) => ({
+  computers: many(computers),
+  classes: many(classes),
+  groups: many(groups),
+}));
+
+export const computersRelations = relations(computers, ({ one, many }) => ({
+  lab: one(labs, {
+    fields: [computers.labId],
+    references: [labs.id],
+  }),
+  groups: many(groups),
+}));
