@@ -413,12 +413,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch('/api/groups/:id', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
-      const validatedData = insertGroupSchema.partial().parse(req.body);
-      const group = await storage.updateGroup(req.params.id, validatedData);
+      // Ownership verification - ensure instructor owns the class
+      const group = await storage.getGroup(req.params.id);
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
       }
-      res.json(group);
+
+      const classInfo = await storage.getClass(group.classId);
+      if (!classInfo) {
+        return res.status(404).json({ error: 'Class not found' });
+      }
+
+      if (classInfo.instructorId !== req.user!.id) {
+        return res.status(403).json({ error: 'You can only modify groups in your own classes' });
+      }
+
+      const validatedData = insertGroupSchema.partial().parse(req.body);
+      const updatedGroup = await storage.updateGroup(req.params.id, validatedData);
+      if (!updatedGroup) {
+        return res.status(404).json({ error: 'Group not found' });
+      }
+      res.json(updatedGroup);
     } catch (error: any) {
       if (error.name === 'ZodError') {
         return res.status(400).json({ error: 'Invalid group data', details: error.errors });

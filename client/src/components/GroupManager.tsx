@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -50,6 +51,7 @@ interface GroupWithDetails extends Group {
 
 export function GroupManager() {
   const [selectedLab, setSelectedLab] = useState<string>("all");
+  const [selectedClasses, setSelectedClasses] = useState<string[]>([]);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showManageDialog, setShowManageDialog] = useState(false);
   const [showReassignDialog, setShowReassignDialog] = useState(false);
@@ -84,9 +86,17 @@ export function GroupManager() {
 
   // Note: Enrollment system removed - students are now directly linked to groups via users.groupId
 
-  const filteredGroups = selectedLab === "all" 
-    ? groups 
-    : groups.filter(group => group.lab?.name === selectedLab);
+  // Apply filters
+  const filteredGroups = groups.filter(group => {
+    // Lab filter
+    const labMatch = selectedLab === "all" || group.lab?.name === selectedLab;
+
+    // Class filter
+    const classMatch = selectedClasses.length === 0 ||
+      (group.class && selectedClasses.includes(group.class.id));
+
+    return labMatch && classMatch;
+  });
 
   const labNames = ["all", ...labs.map(lab => lab.name)];
 
@@ -158,21 +168,80 @@ export function GroupManager() {
         />
       )}
 
-      {/* Lab Filter */}
+      {/* Filters */}
       <Card>
         <CardContent className="p-4">
-          <div className="flex gap-2 flex-wrap">
-            {labNames.map(lab => (
-              <Button
-                key={lab}
-                variant={selectedLab === lab ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedLab(lab)}
-                data-testid={`button-filter-${lab.replace(/\s+/g, '-').toLowerCase()}`}
-              >
-                {lab === "all" ? "All Labs" : lab}
-              </Button>
-            ))}
+          <div className="space-y-4">
+            {/* Lab Filter */}
+            <div>
+              <h4 className="text-sm font-medium mb-2">Filter by Lab</h4>
+              <div className="flex gap-2 flex-wrap">
+                {labNames.map(lab => (
+                  <Button
+                    key={lab}
+                    variant={selectedLab === lab ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSelectedLab(lab)}
+                    data-testid={`button-filter-${lab.replace(/\s+/g, '-').toLowerCase()}`}
+                  >
+                    {lab === "all" ? "All Labs" : lab}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            {/* Class Filter */}
+            <div>
+              <h4 className="text-sm font-medium mb-2">Filter by Class</h4>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-[200px] justify-start">
+                    {selectedClasses.length === 0
+                      ? "All Classes"
+                      : `${selectedClasses.length} class${selectedClasses.length > 1 ? 'es' : ''} selected`
+                    }
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[200px] p-0">
+                  <div className="p-2">
+                    <div className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="all-classes"
+                          checked={selectedClasses.length === 0}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedClasses([]);
+                            }
+                          }}
+                        />
+                        <label htmlFor="all-classes" className="text-sm font-medium">
+                          All Classes
+                        </label>
+                      </div>
+                      {classes.map((cls) => (
+                        <div key={cls.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={cls.id}
+                            checked={selectedClasses.includes(cls.id)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setSelectedClasses([...selectedClasses, cls.id]);
+                              } else {
+                                setSelectedClasses(selectedClasses.filter(id => id !== cls.id));
+                              }
+                            }}
+                          />
+                          <label htmlFor={cls.id} className="text-sm">
+                            {cls.displayName || `${cls.gradeLevel} ${cls.tradeType} ${cls.section}`}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -434,12 +503,12 @@ function CreateGroupForm({
       return isInLab && isAvailable;
     });
 
-    // Get computers already assigned to groups
+    // Get computers already assigned to groups in the SAME CLASS only
     const assignedComputerIds = new Set(
-      groups.filter(g => g.computerId).map(g => g.computerId)
+      groups.filter(g => g.computerId && g.classId === selectedClassId).map(g => g.computerId)
     );
 
-    // Return unassigned computers from selected lab
+    // Return computers not assigned to groups in this class
     return labComputers.filter(c => !assignedComputerIds.has(c.id));
   };
 
@@ -1038,9 +1107,9 @@ function ReassignComputerDialog({
         const isInLab = c.labId === selectedLabId;
         const isAvailable = !c.status || c.status === 'available' || c.status === null || c.status === undefined;
         if (!isInLab || !isAvailable) return false;
-        // Exclude computers already assigned to other groups
+        // Exclude computers already assigned to other groups in the SAME CLASS
         const assignedComputerIds = groups
-          .filter(g => g.id !== group.id && g.computerId)
+          .filter(g => g.id !== group.id && g.computerId && g.classId === group.classId)
           .map(g => g.computerId);
         return !assignedComputerIds.includes(c.id);
       })
