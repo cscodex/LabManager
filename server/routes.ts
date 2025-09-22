@@ -2554,16 +2554,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       console.log('🚀 Starting emergency migration to remove enrollment system...');
 
+      // Import pool for raw SQL queries
+      const { pool } = await import('../server/storage.js');
+
       // Run the migration SQL step by step to avoid syntax issues
       console.log('Step 1: Adding group_id column...');
-      await storage.db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS group_id VARCHAR`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS group_id VARCHAR`);
 
       console.log('Step 2: Creating index...');
-      await storage.db.execute(`CREATE INDEX IF NOT EXISTS users_group_idx ON users(group_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS users_group_idx ON users(group_id)`);
 
       console.log('Step 3: Adding foreign key constraint...');
       try {
-        await storage.db.execute(`ALTER TABLE users ADD CONSTRAINT users_group_id_fkey FOREIGN KEY (group_id) REFERENCES groups(id)`);
+        await pool.query(`ALTER TABLE users ADD CONSTRAINT users_group_id_fkey FOREIGN KEY (group_id) REFERENCES groups(id)`);
       } catch (e: any) {
         if (!e.message.includes('already exists')) {
           console.log('Foreign key constraint already exists or failed:', e.message);
@@ -2571,7 +2574,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       console.log('Step 4: Checking for enrollments table...');
-      const enrollmentsCheck = await storage.db.execute(`
+      const enrollmentsCheck = await pool.query(`
         SELECT table_name
         FROM information_schema.tables
         WHERE table_name = 'enrollments'
@@ -2579,7 +2582,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (enrollmentsCheck.rows && enrollmentsCheck.rows.length > 0) {
         console.log('Step 5: Migrating enrollment data...');
-        await storage.db.execute(`
+        await pool.query(`
           UPDATE users
           SET group_id = e.group_id
           FROM enrollments e
@@ -2589,7 +2592,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         `);
 
         console.log('Step 6: Dropping enrollments table...');
-        await storage.db.execute(`DROP TABLE IF EXISTS enrollments CASCADE`);
+        await pool.query(`DROP TABLE IF EXISTS enrollments CASCADE`);
       } else {
         console.log('No enrollments table found, skipping migration step');
       }
@@ -2617,22 +2620,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       console.log('🔍 Checking database schema...');
 
+      // Import pool for raw SQL queries
+      const { pool } = await import('../server/storage.js');
+
       // Check if group_id column exists in users table
-      const columnCheck = await storage.db.execute(`
+      const columnCheck = await pool.query(`
         SELECT column_name, data_type, is_nullable
         FROM information_schema.columns
         WHERE table_name = 'users' AND column_name = 'group_id'
       `);
 
       // Check if enrollments table exists
-      const enrollmentsCheck = await storage.db.execute(`
+      const enrollmentsCheck = await pool.query(`
         SELECT table_name
         FROM information_schema.tables
         WHERE table_name = 'enrollments'
       `);
 
       // Check users table structure
-      const usersColumns = await storage.db.execute(`
+      const usersColumns = await pool.query(`
         SELECT column_name, data_type, is_nullable
         FROM information_schema.columns
         WHERE table_name = 'users'

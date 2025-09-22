@@ -27,6 +27,9 @@ const pool = new Pool({
 });
 const db = drizzle(pool, { schema });
 
+// Export pool for raw SQL queries
+export { pool };
+
 export interface IStorage {
   // Session storage
   sessionStore: session.Store;
