@@ -2549,6 +2549,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // URGENT: Migration endpoint to fix production database
+  app.post('/api/admin/migrate-remove-enrollments', requireAuth, requireRole(['instructor']), async (req, res) => {
+    try {
+      console.log('🚀 Starting emergency migration to remove enrollment system...');
+
+      // Run the migration SQL directly
+      const migrationSQL = `
+        -- Add group_id column to users table
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS group_id VARCHAR;
+
+        -- Add foreign key constraint
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints
+                        WHERE constraint_name = 'users_group_id_fkey') THEN
+            ALTER TABLE users ADD CONSTRAINT users_group_id_fkey FOREIGN KEY (group_id) REFERENCES groups(id);
+          END IF;
+        END $$;
+
+        -- Create index for performance
+        CREATE INDEX IF NOT EXISTS users_group_idx ON users(group_id);
+
+        -- Migrate existing enrollment data (if enrollments table exists)
+        DO $$
+        BEGIN
+          IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'enrollments') THEN
+            UPDATE users
+            SET group_id = e.group_id
+            FROM enrollments e
+            WHERE users.id = e.student_id
+            AND e.is_active = true
+            AND e.group_id IS NOT NULL;
+
+            DROP TABLE IF EXISTS enrollments CASCADE;
+          END IF;
+        END $$;
+      `;
+
+      // Execute the migration using the existing database connection
+      await storage.db.execute(migrationSQL);
+
+      console.log('✅ Migration completed successfully!');
+
+      res.json({
+        success: true,
+        message: 'Database migration completed successfully',
+        details: 'Enrollment system removed, group_id column added to users table'
+      });
+
+    } catch (error: any) {
+      console.error('❌ Migration failed:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Migration failed',
+        details: error.message
+      });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
