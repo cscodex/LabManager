@@ -274,6 +274,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Computers Management
+  app.get('/api/computers', requireAuth, async (req, res) => {
+    try {
+      const computers = await storage.getAllComputers();
+      res.json(computers);
+    } catch (error: any) {
+      console.error('Error fetching computers:', error);
+      res.status(500).json({ error: 'Failed to fetch computers' });
+    }
+  });
+
   app.get('/api/labs/:labId/computers', requireAuth, async (req, res) => {
     try {
       const computers = await storage.getComputersByLab(req.params.labId);

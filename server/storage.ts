@@ -70,6 +70,7 @@ export interface IStorage {
   checkTimetableConflicts(labId: string, dayOfWeek: number, startTime: string, endTime: string, excludeTimetableId?: string, classId?: string): Promise<{ hasConflicts: boolean; conflictingTimetables: Timetable[] }>;
   
   // Computers
+  getAllComputers(): Promise<Computer[]>;
   getComputersByLab(labId: string): Promise<Computer[]>;
   getComputer(id: string): Promise<Computer | undefined>;
   createComputer(computer: InsertComputer): Promise<Computer>;
@@ -446,6 +447,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Computers
+  async getAllComputers(): Promise<Computer[]> {
+    return await db.query.computers.findMany();
+  }
+
   async getComputersByLab(labId: string): Promise<Computer[]> {
     return await db.query.computers.findMany({
       where: eq(schema.computers.labId, labId),

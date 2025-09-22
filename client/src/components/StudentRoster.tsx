@@ -573,9 +573,15 @@ export function StudentRoster() {
 
   const handleEditSubmit = (data: AddStudentFormData) => {
     if (selectedStudentForEdit) {
+      // Only send class profile fields for editing
+      const updates = {
+        gradeLevel: data.gradeLevel,
+        tradeType: data.tradeType,
+        section: data.section
+      };
       editStudentMutation.mutate({
         studentId: selectedStudentForEdit.id,
-        updates: data
+        updates
       });
     }
   };
@@ -1671,107 +1677,7 @@ export function StudentRoster() {
           </DialogHeader>
           <Form {...addStudentForm}>
             <form onSubmit={addStudentForm.handleSubmit(handleEditSubmit)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={addStudentForm.control}
-                  name="firstName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>First Name</FormLabel>
-                      <FormControl>
-                        <Input {...field} data-testid="input-edit-first-name" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={addStudentForm.control}
-                  name="lastName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Last Name</FormLabel>
-                      <FormControl>
-                        <Input {...field} data-testid="input-edit-last-name" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <FormField
-                control={addStudentForm.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl>
-                      <Input {...field} type="email" data-testid="input-edit-email" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={addStudentForm.control}
-                  name="studentId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Student ID</FormLabel>
-                      <FormControl>
-                        <Input {...field} data-testid="input-edit-student-id" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={addStudentForm.control}
-                  name="gender"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Gender</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-
-                          <SelectTrigger data-testid="select-edit-gender">
-                            <SelectValue placeholder="Select gender" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="male">Male</SelectItem>
-                          <SelectItem value="female">Female</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              {/* Assigned Class (select to sync grade/trade/section) */}
-              <FormItem>
-                <FormLabel>Assigned Class</FormLabel>
-                <Select onValueChange={handleAssignedClassChange}>
-                  <FormControl>
-                    <SelectTrigger data-testid="select-edit-assigned-class">
-                      <SelectValue placeholder="Select class (optional)" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {classes?.map((cls) => (
-                      <SelectItem key={cls.id} value={cls.id}>
-                        {cls.displayName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FormItem>
-
-              {/* Profile-based assignment fields */}
+              {/* Only Grade, Trade, and Section fields for editing */}
               <div className="grid grid-cols-3 gap-4">
                 <FormField
                   control={addStudentForm.control}
