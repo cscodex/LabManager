@@ -708,83 +708,92 @@ export class DatabaseStorage implements IStorage {
 
   async getGroupsWithDetails(): Promise<any[]> {
     try {
-      // OPTIMIZED: Single query with joins to get all data at once
-      const groupsWithRelations = await db.query.groups.findMany({
-        with: {
-          class: {
-            with: {
-              instructor: {
-                columns: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  email: true,
-                  role: true,
-                  // Exclude password for security
-                }
-              },
-              lab: true
-            }
-          },
-          lab: true,
-          computer: true,
-        }
-      });
+      // Get all groups
+      const groups = await db.query.groups.findMany();
 
-      // OPTIMIZED: Batch fetch all enrollments for all groups
-      const allGroupIds = groupsWithRelations.map(g => g.id);
-      const allEnrollments = await db.query.enrollments.findMany({
-        where: and(
-          sql`${schema.enrollments.groupId} = ANY(${allGroupIds})`,
-          eq(schema.enrollments.isActive, true)
-        ),
-        with: {
-          student: {
-            columns: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true,
-              role: true,
-              gradeLevel: true,
-              tradeType: true,
-              section: true,
-              // Exclude password for security
+      const groupsWithDetails = await Promise.all(
+        groups.map(async (group) => {
+          // Get class information
+          const classInfo = await db.query.classes.findFirst({
+            where: eq(schema.classes.id, group.classId),
+          });
+
+          // Get lab information
+          let labInfo = null;
+          if (group.labId) {
+            labInfo = await db.query.labs.findFirst({
+              where: eq(schema.labs.id, group.labId),
+            });
+          }
+
+          // Get computer information
+          let computerInfo = null;
+          if (group.computerId) {
+            computerInfo = await db.query.computers.findFirst({
+              where: eq(schema.computers.id, group.computerId),
+            });
+          }
+
+          // Get instructor information
+          let instructorInfo = null;
+          if (classInfo && classInfo.instructorId) {
+            const instructor = await db.query.users.findFirst({
+              where: eq(schema.users.id, classInfo.instructorId),
+            });
+            // Remove password for security
+            if (instructor) {
+              instructorInfo = {
+                id: instructor.id,
+                firstName: instructor.firstName,
+                lastName: instructor.lastName,
+                email: instructor.email,
+                role: instructor.role
+              };
             }
           }
-        }
-      });
 
-      // OPTIMIZED: Group enrollments by groupId for O(1) lookup
-      const enrollmentsByGroup = new Map<string, any[]>();
-      allEnrollments.forEach(enrollment => {
-        const groupId = enrollment.groupId!;
-        if (!enrollmentsByGroup.has(groupId)) {
-          enrollmentsByGroup.set(groupId, []);
-        }
-        enrollmentsByGroup.get(groupId)!.push({
-          enrollment: {
-            id: enrollment.id,
-            studentId: enrollment.studentId,
-            classId: enrollment.classId,
-            groupId: enrollment.groupId,
-            seatNumber: enrollment.seatNumber,
-            enrolledAt: enrollment.enrolledAt,
-            isActive: enrollment.isActive
-          },
-          student: enrollment.student
-        });
-      });
+          // Get group members (enrollments + student details)
+          const enrollments = await db.query.enrollments.findMany({
+            where: and(
+              eq(schema.enrollments.groupId, group.id),
+              eq(schema.enrollments.isActive, true)
+            ),
+          });
 
-      // OPTIMIZED: Map results without additional queries
-      const groupsWithDetails = groupsWithRelations.map(group => ({
-        ...group,
-        class: group.class,
-        lab: group.lab,
-        computer: group.computer,
-        instructor: group.class?.instructor || null,
-        members: enrollmentsByGroup.get(group.id) || []
-      }));
+          const members = await Promise.all(
+            enrollments.map(async (enrollment) => {
+              const student = await db.query.users.findFirst({
+                where: eq(schema.users.id, enrollment.studentId),
+              });
+              // Remove password for security
+              const sanitizedStudent = student ? {
+                id: student.id,
+                firstName: student.firstName,
+                lastName: student.lastName,
+                email: student.email,
+                role: student.role,
+                gradeLevel: student.gradeLevel,
+                tradeType: student.tradeType,
+                section: student.section
+              } : null;
+
+              return {
+                enrollment,
+                student: sanitizedStudent
+              };
+            })
+          );
+
+          return {
+            ...group,
+            class: classInfo,
+            lab: labInfo,
+            computer: computerInfo,
+            instructor: instructorInfo,
+            members
+          };
+        })
+      );
 
       return groupsWithDetails;
     } catch (error) {

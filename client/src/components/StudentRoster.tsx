@@ -436,42 +436,7 @@ export function StudentRoster() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [selectedStudentForDelete, setSelectedStudentForDelete] = useState<User | null>(null);
 
-  // Bulk edit state and handler
-  const [showBulkEditDialog, setShowBulkEditDialog] = useState(false);
-  const [bulkGradeLevel, setBulkGradeLevel] = useState<number | ''>('');
-  const [bulkTradeType, setBulkTradeType] = useState<'NM' | 'M' | 'C' | ''>('');
-  const [bulkSection, setBulkSection] = useState<string>('');
 
-  const confirmBulkEdit = async () => {
-    if (selectedStudents.length === 0) {
-      toast({ title: 'No students selected', description: 'Please select students to update', variant: 'destructive' });
-      return;
-    }
-    if (!bulkGradeLevel || !bulkTradeType || !bulkSection) {
-      toast({ title: 'Incomplete selection', description: 'Choose Grade, Trade and Section', variant: 'destructive' });
-      return;
-    }
-    try {
-      await Promise.all(selectedStudents.map(async (studentId) => {
-        const res = await apiRequest('PATCH', `/api/students/${studentId}`, {
-          gradeLevel: bulkGradeLevel,
-          tradeType: bulkTradeType,
-          section: bulkSection
-        });
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err?.error || 'Failed to update');
-        }
-      }));
-      queryClient.invalidateQueries({ queryKey: ['/api/students'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/enrollments/details'] });
-      setShowBulkEditDialog(false);
-      setSelectedStudents([]);
-      toast({ title: 'Success', description: 'Profiles updated for selected students' });
-    } catch (e: any) {
-      toast({ title: 'Error', description: e.message || 'Some updates failed', variant: 'destructive' });
-    }
-  };
 
 
   // Delete student mutation
@@ -1243,15 +1208,7 @@ export function StudentRoster() {
                   {selectedStudents.length} selected
                 </Badge>
                 <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowBulkEditDialog(true)}
-                    data-testid="button-bulk-edit"
-                  >
-                    <Edit className="h-4 w-4 mr-2" />
-                    Bulk Edit Profiles
-                  </Button>
+
                   <Button
                     variant="destructive"
                     size="sm"
@@ -1880,82 +1837,6 @@ export function StudentRoster() {
                             {sectionOptions.map((s) => (
                               <SelectItem key={s} value={s}>{s}</SelectItem>
                             ))}
-
-      {/* Bulk Edit Profiles Dialog */}
-      <Dialog open={showBulkEditDialog} onOpenChange={setShowBulkEditDialog}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Bulk Edit Profiles</DialogTitle>
-            <DialogDescription>Set class fields for all selected students.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <Label>Grade</Label>
-                <Select value={bulkGradeLevel ? String(bulkGradeLevel) : ''} onValueChange={(v) => setBulkGradeLevel(Number(v) as 11 | 12)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="11">Grade 11</SelectItem>
-                    <SelectItem value="12">Grade 12</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Trade</Label>
-                <Select value={bulkTradeType} onValueChange={(v) => { setBulkTradeType(v as any); setBulkSection(''); }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="NM">Non Medical</SelectItem>
-                    <SelectItem value="M">Medical</SelectItem>
-                    <SelectItem value="C">Commerce</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Section</Label>
-                <Select value={bulkSection} onValueChange={setBulkSection} disabled={!bulkTradeType}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {bulkTradeType === 'NM' && (
-                      <>
-                        <SelectItem value="A">Section A</SelectItem>
-                        <SelectItem value="B">Section B</SelectItem>
-                        <SelectItem value="C">Section C</SelectItem>
-                        <SelectItem value="D">Section D</SelectItem>
-                        <SelectItem value="E">Section E</SelectItem>
-                        <SelectItem value="F">Section F</SelectItem>
-                      </>
-                    )}
-                    {bulkTradeType === 'M' && (
-                      <>
-                        <SelectItem value="A">Section A</SelectItem>
-                        <SelectItem value="B">Section B</SelectItem>
-                      </>
-                    )}
-                    {bulkTradeType === 'C' && (
-                      <>
-                        <SelectItem value="A">Section A</SelectItem>
-                        <SelectItem value="B">Section B</SelectItem>
-                      </>
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setShowBulkEditDialog(false)}>Cancel</Button>
-            <Button onClick={confirmBulkEdit}>Apply to {selectedStudents.length} students</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -1964,7 +1845,6 @@ export function StudentRoster() {
                   }}
                 />
               </div>
-
 
               <DialogFooter>
                 <Button
