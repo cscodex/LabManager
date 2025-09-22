@@ -562,13 +562,16 @@ export class DatabaseStorage implements IStorage {
           throw new Error("Computer not found or not available in selected lab");
         }
         
-        // Check if computer is already assigned to another group
+        // Check if computer is already assigned to another group in the SAME CLASS
         const existingGroupWithComputer = await tx.query.groups.findFirst({
-          where: eq(schema.groups.computerId, group.computerId)
+          where: and(
+            eq(schema.groups.computerId, group.computerId),
+            eq(schema.groups.classId, group.classId!)
+          )
         });
-        
+
         if (existingGroupWithComputer) {
-          throw new Error("Computer is already assigned to another group");
+          throw new Error("Computer is already assigned to another group in this class");
         }
       }
 
@@ -672,6 +675,13 @@ export class DatabaseStorage implements IStorage {
     await db.update(schema.users)
       .set({ groupId: groupId })
       .where(eq(schema.users.id, studentId));
+
+    // If this is the first member and group has no leader, make them the leader
+    if (currentMembers.length === 0 && !group.leaderId) {
+      await db.update(schema.groups)
+        .set({ leaderId: studentId })
+        .where(eq(schema.groups.id, groupId));
+    }
 
     return true;
   }

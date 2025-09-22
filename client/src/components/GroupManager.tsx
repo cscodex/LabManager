@@ -212,6 +212,9 @@ export function GroupManager() {
                           onCheckedChange={(checked) => {
                             if (checked) {
                               setSelectedClasses([]);
+                            } else {
+                              // If unchecking "All Classes", select all classes
+                              setSelectedClasses(classes.map(cls => cls.id));
                             }
                           }}
                         />
