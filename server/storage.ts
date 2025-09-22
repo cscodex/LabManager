@@ -509,6 +509,8 @@ export class DatabaseStorage implements IStorage {
 
   async createGroupWithStudents(group: InsertGroup, studentIds: string[]): Promise<Group> {
     return await db.transaction(async (tx) => {
+      console.log('Creating group with students - Group data:', group, 'Student IDs:', studentIds);
+
       // Server-side validations
       if (studentIds && studentIds.length > 0) {
         // Check if any students are already in groups
@@ -520,11 +522,12 @@ export class DatabaseStorage implements IStorage {
             sql`${schema.enrollments.studentId} = ANY(${studentIds}) AND ${schema.enrollments.groupId} IS NOT NULL`
           )
         });
-        
+
         if (existingGroupEnrollments.length > 0) {
+          console.error('Students already in groups:', existingGroupEnrollments);
           throw new Error("Some students are already assigned to groups");
         }
-        
+
         // Validate student enrollment and count
         const validEnrollments = await tx.query.enrollments.findMany({
           where: and(
@@ -533,16 +536,18 @@ export class DatabaseStorage implements IStorage {
             sql`${schema.enrollments.studentId} = ANY(${studentIds})`
           )
         });
-        
+
+        console.log('Valid enrollments found:', validEnrollments.length, 'Expected:', studentIds.length);
+
         if (validEnrollments.length !== studentIds.length) {
           throw new Error("Some students are not enrolled in this class");
         }
-        
+
         // Validate max members
-        if (studentIds.length > group.maxMembers) {
-          throw new Error(`Too many students selected. Maximum allowed: ${group.maxMembers}`);
+        if (studentIds.length > (group.maxMembers || 4)) {
+          throw new Error(`Too many students selected. Maximum allowed: ${group.maxMembers || 4}`);
         }
-        
+
         // Validate leader is in selected students
         if (group.leaderId && !studentIds.includes(group.leaderId)) {
           throw new Error("Group leader must be one of the selected students");
@@ -572,12 +577,26 @@ export class DatabaseStorage implements IStorage {
           throw new Error("Computer is already assigned to another group");
         }
       }
-      
+
+      // Prepare group data with proper null handling
+      const groupToInsert = {
+        ...group,
+        leaderId: group.leaderId || null,
+        labId: group.labId || null,
+        computerId: group.computerId === 'none' ? null : (group.computerId || null),
+        maxMembers: group.maxMembers || 4
+      };
+
+      console.log('Inserting group with data:', groupToInsert);
+
       // Create the group
-      const [createdGroup] = await tx.insert(schema.groups).values(group).returning();
-      
+      const [createdGroup] = await tx.insert(schema.groups).values(groupToInsert).returning();
+
+      console.log('Group created:', createdGroup);
+
       // Assign students to group atomically if provided
       if (studentIds && studentIds.length > 0) {
+        console.log('Assigning students to group:', studentIds);
         const updateResult = await tx.update(schema.enrollments)
           .set({ groupId: createdGroup.id })
           .where(
@@ -589,13 +608,15 @@ export class DatabaseStorage implements IStorage {
             )
           )
           .returning();
-          
+
+        console.log('Students assigned:', updateResult.length);
+
         // Verify all students were assigned
         if (updateResult.length !== studentIds.length) {
           throw new Error("Failed to assign all students to group");
         }
       }
-      
+
       return createdGroup;
     });
   }

@@ -380,28 +380,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/groups', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
+      console.log('Creating group with data:', req.body);
       const validatedData = insertGroupSchema.parse(req.body);
+      console.log('Validated group data:', validatedData);
+
       const { studentIds, ...groupData } = validatedData;
 
       let group;
       if (studentIds && studentIds.length > 0) {
         // Create group with student assignments
+        console.log('Creating group with students:', studentIds);
         group = await storage.createGroupWithStudents(groupData, studentIds);
       } else {
         // Create group without students
+        console.log('Creating group without students');
         group = await storage.createGroup(groupData);
       }
 
+      console.log('Group created successfully:', group.id);
       res.status(201).json(group);
     } catch (error: any) {
+      console.error('Error creating group - Full error:', error);
       if (error.name === 'ZodError') {
+        console.error('Zod validation errors:', error.errors);
         return res.status(400).json({ error: 'Invalid group data', details: error.errors });
       }
       if (error.constraint) {
         return res.status(409).json({ error: 'Group with this name already exists in this class' });
       }
-      console.error('Error creating group:', error);
-      res.status(500).json({ error: 'Failed to create group' });
+      res.status(500).json({ error: 'Failed to create group', details: error.message });
     }
   });
 
@@ -654,6 +661,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch('/api/students/:id', requireAuth, requireRole(['instructor']), async (req, res) => {
     try {
       const studentId = req.params.id;
+      console.log('Updating student:', studentId, 'with data:', req.body);
 
       // Verify student exists
       const existingStudent = await storage.getUser(studentId);
@@ -672,6 +680,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      console.log('Processed update data:', updateData);
+
       // Basic validation for required fields if they're being updated
       if (updateData.email && typeof updateData.email !== 'string') {
         return res.status(400).json({ error: 'Invalid email format' });
@@ -683,14 +693,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Invalid lastName format' });
       }
 
+      // Validate class profile fields
+      if (updateData.gradeLevel && (updateData.gradeLevel < 11 || updateData.gradeLevel > 12)) {
+        return res.status(400).json({ error: 'Grade level must be 11 or 12' });
+      }
+      if (updateData.tradeType && !['NM', 'M', 'C'].includes(updateData.tradeType)) {
+        return res.status(400).json({ error: 'Trade type must be NM, M, or C' });
+      }
+      if (updateData.section && !/^[A-J]$/.test(updateData.section)) {
+        return res.status(400).json({ error: 'Section must be A through J' });
+      }
+
       // Auto-generate studentId if missing (existing had none) and profile is complete
       try {
-        const effectiveGrade = (updateData as any).gradeLevel ?? (existingStudent as any).gradeLevel;
-        const effectiveTrade = (updateData as any).tradeType ?? (existingStudent as any).tradeType;
-        const effectiveSection = (updateData as any).section ?? (existingStudent as any).section;
-        if (!(existingStudent as any).studentId && !(updateData as any).studentId) {
+        const effectiveGrade = updateData.gradeLevel ?? existingStudent.gradeLevel;
+        const effectiveTrade = updateData.tradeType ?? existingStudent.tradeType;
+        const effectiveSection = updateData.section ?? existingStudent.section;
+        if (!existingStudent.studentId && !updateData.studentId) {
           const genId = await generateDefaultStudentId(effectiveGrade, effectiveTrade, effectiveSection);
-          if (genId) (updateData as any).studentId = genId;
+          if (genId) updateData.studentId = genId;
         }
       } catch (e) {
         console.error('Failed to auto-generate studentId on update:', e);
@@ -702,20 +723,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'Student not found' });
       }
 
+      console.log('Student updated successfully:', updatedStudent.id);
+
       // Remove password from response for security
       const { password, ...sanitizedStudent } = updatedStudent;
       res.json(sanitizedStudent);
     } catch (error: any) {
+      console.error('Error updating student - Full error:', error);
       if (error.name === 'ZodError') {
         return res.status(400).json({ error: 'Invalid student data', details: error.errors });
-
-
       }
       if (error.constraint && error.constraint.includes('unique')) {
         return res.status(409).json({ error: 'Email or Student ID already exists' });
       }
-      console.error('Error updating student:', error);
-      res.status(500).json({ error: 'Failed to update student' });
+      res.status(500).json({ error: 'Failed to update student', details: error.message });
     }
   });
 
