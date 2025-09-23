@@ -411,7 +411,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/groups/:id', requireAuth, requireRole(['instructor']), async (req, res) => {
+  app.patch('/api/groups/:id', requireAuth, requireRole(['admin', 'instructor']), async (req, res) => {
     try {
       // Ownership verification - ensure instructor owns the class
       const group = await storage.getGroup(req.params.id);
@@ -419,22 +419,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'Group not found' });
       }
 
-      // Check if instructor teaches the class that this group belongs to
-      const accessCheck = await storage.verifyInstructorAccess(req.user!.id, group.classId);
+      // Admin users have full access, instructors need class ownership verification
+      if (req.user!.role !== 'admin') {
+        // Check if instructor teaches the class that this group belongs to
+        const accessCheck = await storage.verifyInstructorAccess(req.user!.id, group.classId);
 
-      console.log('Update group authorization debug:', {
-        userId: req.user!.id,
-        userRole: req.user!.role,
-        groupId: req.params.id,
-        groupClassId: group.classId,
-        accessCheck
-      });
+        console.log('Update group authorization debug:', {
+          userId: req.user!.id,
+          userRole: req.user!.role,
+          groupId: req.params.id,
+          groupClassId: group.classId,
+          accessCheck
+        });
 
-      if (!accessCheck.hasAccess) {
-        return res.status(403).json({
-          error: 'You can only modify groups in your own classes',
-          reason: accessCheck.reason,
-          details: accessCheck.details
+        if (!accessCheck.hasAccess) {
+          return res.status(403).json({
+            error: 'You can only modify groups in your own classes',
+            reason: accessCheck.reason,
+            details: accessCheck.details
+          });
+        }
+      } else {
+        console.log('Admin access granted for group update:', {
+          userId: req.user!.id,
+          userRole: req.user!.role,
+          groupId: req.params.id,
+          groupClassId: group.classId
         });
       }
 
@@ -473,7 +483,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Group member management endpoints
-  app.post('/api/groups/:id/members', requireAuth, requireRole(['instructor']), async (req, res) => {
+  app.post('/api/groups/:id/members', requireAuth, requireRole(['admin', 'instructor']), async (req, res) => {
     try {
       // Zod validation
       const memberSchema = z.object({
@@ -488,22 +498,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'Group not found' });
       }
 
-      // Check if instructor teaches the class that this group belongs to
-      const accessCheck = await storage.verifyInstructorAccess(req.user!.id, group.classId);
+      // Admin users have full access, instructors need class ownership verification
+      if (req.user!.role !== 'admin') {
+        // Check if instructor teaches the class that this group belongs to
+        const accessCheck = await storage.verifyInstructorAccess(req.user!.id, group.classId);
 
-      console.log('Add member authorization debug:', {
-        userId: req.user!.id,
-        userRole: req.user!.role,
-        groupId: req.params.id,
-        groupClassId: group.classId,
-        accessCheck
-      });
+        console.log('Add member authorization debug:', {
+          userId: req.user!.id,
+          userRole: req.user!.role,
+          groupId: req.params.id,
+          groupClassId: group.classId,
+          accessCheck
+        });
 
-      if (!accessCheck.hasAccess) {
-        return res.status(403).json({
-          error: 'You can only modify groups in your own classes',
-          reason: accessCheck.reason,
-          details: accessCheck.details
+        if (!accessCheck.hasAccess) {
+          return res.status(403).json({
+            error: 'You can only modify groups in your own classes',
+            reason: accessCheck.reason,
+            details: accessCheck.details
+          });
+        }
+      } else {
+        console.log('Admin access granted for add member:', {
+          userId: req.user!.id,
+          userRole: req.user!.role,
+          groupId: req.params.id,
+          groupClassId: group.classId
         });
       }
 
@@ -518,7 +538,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/groups/:id/members/:studentId', requireAuth, requireRole(['instructor']), async (req, res) => {
+  app.delete('/api/groups/:id/members/:studentId', requireAuth, requireRole(['admin', 'instructor']), async (req, res) => {
     try {
       // Ownership verification - ensure instructor owns the class
       const group = await storage.getGroup(req.params.id);
@@ -526,22 +546,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'Group not found' });
       }
 
-      // Check if instructor teaches the class that this group belongs to
-      const accessCheck = await storage.verifyInstructorAccess(req.user!.id, group.classId);
+      // Admin users have full access, instructors need class ownership verification
+      if (req.user!.role !== 'admin') {
+        // Check if instructor teaches the class that this group belongs to
+        const accessCheck = await storage.verifyInstructorAccess(req.user!.id, group.classId);
 
-      console.log('Remove member authorization debug:', {
-        userId: req.user!.id,
-        userRole: req.user!.role,
-        groupId: req.params.id,
-        groupClassId: group.classId,
-        accessCheck
-      });
+        console.log('Remove member authorization debug:', {
+          userId: req.user!.id,
+          userRole: req.user!.role,
+          groupId: req.params.id,
+          groupClassId: group.classId,
+          accessCheck
+        });
 
-      if (!accessCheck.hasAccess) {
-        return res.status(403).json({
-          error: 'You can only modify groups in your own classes',
-          reason: accessCheck.reason,
-          details: accessCheck.details
+        if (!accessCheck.hasAccess) {
+          return res.status(403).json({
+            error: 'You can only modify groups in your own classes',
+            reason: accessCheck.reason,
+            details: accessCheck.details
+          });
+        }
+      } else {
+        console.log('Admin access granted for remove member:', {
+          userId: req.user!.id,
+          userRole: req.user!.role,
+          groupId: req.params.id,
+          groupClassId: group.classId
         });
       }
 

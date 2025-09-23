@@ -8,7 +8,7 @@ export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: text("email").notNull().unique(),
   password: text("password").notNull(),
-  role: text("role").notNull().default("student"), // instructor, student
+  role: text("role").notNull().default("student"), // admin, instructor, student
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
   // Enhanced student profile fields
@@ -242,6 +242,8 @@ export const insertUserWithRoleSchema = createInsertSchema(users).pick({
   tradeType: true,
   section: true,
 }).extend({
+  // Role validation
+  role: z.enum(["admin", "instructor", "student"]),
   // Validation for enhanced student fields
   studentId: z.string().optional(),
   gender: z.enum(["male", "female"]).optional(),
@@ -256,13 +258,13 @@ export const insertUserWithRoleSchema = createInsertSchema(users).pick({
   if (data.role === "student") {
     return data.gradeLevel && data.tradeType && data.section;
   }
-  // For instructors, student fields should be null
-  if (data.role === "instructor") {
+  // For instructors and admins, student fields should be null
+  if (data.role === "instructor" || data.role === "admin") {
     return !data.gradeLevel && !data.tradeType && !data.section;
   }
   return true;
 }, {
-  message: "Students must have grade level, trade type, and section. Instructors should not have these fields.",
+  message: "Students must have grade level, trade type, and section. Instructors and admins should not have these fields.",
   path: ["role"]
 }).refine((data) => {
   // Section validation based on trade type (matches classes table rules)

@@ -19,6 +19,7 @@
     "db:optimize": "tsx scripts/optimize-database.ts",
     "db:migrate-remove-enrollments": "tsx scripts/migrate-remove-enrollments.ts",
     "create-test-users": "tsx scripts/create-test-users.ts",
+    "create-admin": "tsx scripts/create-admin.ts",
     "deploy": "npm run build && npm run start",
     "health-check": "curl -f http://localhost:${PORT:-5000}/api/health || exit 1"
   },

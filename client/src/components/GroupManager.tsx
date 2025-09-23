@@ -548,7 +548,11 @@ function CreateGroupForm({
       return await response.json();
     },
     onSuccess: () => {
+      // Invalidate all related queries to ensure UI synchronization
       queryClient.invalidateQueries({ queryKey: ['/api/groups/details'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/students'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/groups'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/computers'] });
       onSuccess();
       form.reset();
       toast({
@@ -898,10 +902,13 @@ function ManageMembersDialog({
       return response;
     },
     onSuccess: () => {
+      // Invalidate all related queries to ensure UI synchronization
       queryClient.invalidateQueries({ queryKey: ['/api/groups/details'] });
-      toast({ 
-        title: "Success", 
-        description: "Member added successfully" 
+      queryClient.invalidateQueries({ queryKey: ['/api/students'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/groups'] });
+      toast({
+        title: "Success",
+        description: "Member added successfully"
       });
     },
     onError: (error: any) => {
@@ -919,10 +926,13 @@ function ManageMembersDialog({
       return response;
     },
     onSuccess: () => {
+      // Invalidate all related queries to ensure UI synchronization
       queryClient.invalidateQueries({ queryKey: ['/api/groups/details'] });
-      toast({ 
-        title: "Success", 
-        description: "Member removed successfully" 
+      queryClient.invalidateQueries({ queryKey: ['/api/students'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/groups'] });
+      toast({
+        title: "Success",
+        description: "Member removed successfully"
       });
     },
     onError: (error: any) => {
@@ -942,10 +952,13 @@ function ManageMembersDialog({
       return response;
     },
     onSuccess: () => {
+      // Invalidate all related queries to ensure UI synchronization
       queryClient.invalidateQueries({ queryKey: ['/api/groups/details'] });
-      toast({ 
-        title: "Success", 
-        description: "Leader reassigned successfully" 
+      queryClient.invalidateQueries({ queryKey: ['/api/students'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/groups'] });
+      toast({
+        title: "Success",
+        description: "Leader reassigned successfully"
       });
     },
     onError: (error: any) => {
@@ -1145,10 +1158,13 @@ function ReassignComputerDialog({
       return await apiRequest('PATCH', `/api/groups/${group.id}`, updateData);
     },
     onSuccess: () => {
+      // Invalidate all related queries to ensure UI synchronization
       queryClient.invalidateQueries({ queryKey: ['/api/groups/details'] });
-      toast({ 
-        title: "Success", 
-        description: "Computer assignment updated successfully" 
+      queryClient.invalidateQueries({ queryKey: ['/api/computers'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/groups'] });
+      toast({
+        title: "Success",
+        description: "Computer assignment updated successfully"
       });
       onOpenChange(false);
     },
