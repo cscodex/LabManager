@@ -59,6 +59,16 @@ export function GroupManager() {
   
   const { toast } = useToast();
 
+  // Update selectedGroup when groups data changes to ensure it's always fresh
+  useEffect(() => {
+    if (selectedGroup && groups.length > 0) {
+      const updatedGroup = groups.find(g => g.id === selectedGroup.id);
+      if (updatedGroup) {
+        setSelectedGroup(updatedGroup);
+      }
+    }
+  }, [groups, selectedGroup?.id]);
+
   // Fetch all groups with details
   const { data: groups = [], isLoading: groupsLoading } = useQuery<GroupWithDetails[]>({
     queryKey: ['/api/groups/details']
@@ -890,6 +900,18 @@ function ManageMembersDialog({
       );
 
       setAvailableStudents(available);
+
+      console.log('Available students updated:', {
+        totalStudents: students.length,
+        studentsInGroups: studentsInGroups.size,
+        currentMembers: currentMemberIds.size,
+        availableCount: available.length,
+        classFilter: {
+          gradeLevel: group.class?.gradeLevel,
+          tradeType: group.class?.tradeType,
+          section: group.class?.section
+        }
+      });
     }
   }, [open, group, students, groups]);
 

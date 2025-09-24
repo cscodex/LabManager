@@ -588,8 +588,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userRole = req.user?.role;
 
-      if (userRole === 'instructor') {
-        // Instructors can see all students
+      if (userRole === 'admin' || userRole === 'instructor') {
+        // Admins and instructors can see all students
         const students = await storage.getUsersByRole('student');
         // Remove passwords from response for security
         const sanitizedStudents = students.map(({ password, ...student }) => student);
