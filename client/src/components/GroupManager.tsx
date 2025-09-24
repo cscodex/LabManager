@@ -872,7 +872,7 @@ function ManageMembersDialog({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
-  // Get available students when dialog opens
+  // Get available students when dialog opens or when data changes
   useEffect(() => {
     if (open && group) {
       // Get students already in ANY group (since students can only be in one group)
@@ -901,7 +901,8 @@ function ManageMembersDialog({
 
       setAvailableStudents(available);
 
-      console.log('Available students updated:', {
+      console.log('Available students calculation triggered:', {
+        trigger: 'useEffect dependency change',
         totalStudents: students.length,
         studentsInGroups: studentsInGroups.size,
         currentMembers: currentMemberIds.size,
@@ -910,10 +911,15 @@ function ManageMembersDialog({
           gradeLevel: group.class?.gradeLevel,
           tradeType: group.class?.tradeType,
           section: group.class?.section
-        }
+        },
+        studentsWithGroupId: students.filter(s => s.groupId).length,
+        timestamp: new Date().toISOString()
       });
+    } else {
+      // Clear available students when dialog is closed
+      setAvailableStudents([]);
     }
-  }, [open, group, students, groups]);
+  }, [open, group, students, groups, group?.members]);
 
   // Mutations
   const addMemberMutation = useMutation({
@@ -924,10 +930,16 @@ function ManageMembersDialog({
       return response;
     },
     onSuccess: () => {
+      console.log('Add member mutation success - invalidating queries');
       // Invalidate all related queries to ensure UI synchronization
       queryClient.invalidateQueries({ queryKey: ['/api/groups/details'] });
       queryClient.invalidateQueries({ queryKey: ['/api/students'] });
       queryClient.invalidateQueries({ queryKey: ['/api/groups'] });
+
+      // Force immediate refetch to ensure data is fresh
+      queryClient.refetchQueries({ queryKey: ['/api/students'] });
+      queryClient.refetchQueries({ queryKey: ['/api/groups/details'] });
+
       toast({
         title: "Success",
         description: "Member added successfully"
@@ -948,10 +960,16 @@ function ManageMembersDialog({
       return response;
     },
     onSuccess: () => {
+      console.log('Remove member mutation success - invalidating queries');
       // Invalidate all related queries to ensure UI synchronization
       queryClient.invalidateQueries({ queryKey: ['/api/groups/details'] });
       queryClient.invalidateQueries({ queryKey: ['/api/students'] });
       queryClient.invalidateQueries({ queryKey: ['/api/groups'] });
+
+      // Force immediate refetch to ensure data is fresh
+      queryClient.refetchQueries({ queryKey: ['/api/students'] });
+      queryClient.refetchQueries({ queryKey: ['/api/groups/details'] });
+
       toast({
         title: "Success",
         description: "Member removed successfully"
@@ -974,10 +992,15 @@ function ManageMembersDialog({
       return response;
     },
     onSuccess: () => {
+      console.log('Reassign leader mutation success - invalidating queries');
       // Invalidate all related queries to ensure UI synchronization
       queryClient.invalidateQueries({ queryKey: ['/api/groups/details'] });
       queryClient.invalidateQueries({ queryKey: ['/api/students'] });
       queryClient.invalidateQueries({ queryKey: ['/api/groups'] });
+
+      // Force immediate refetch to ensure data is fresh
+      queryClient.refetchQueries({ queryKey: ['/api/groups/details'] });
+
       toast({
         title: "Success",
         description: "Leader reassigned successfully"
